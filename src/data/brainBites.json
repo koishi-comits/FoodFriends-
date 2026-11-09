@@ -1,0 +1,35 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "q": "Which snack gives you long-lasting energy?",
+      "options": ["Apple & peanut butter", "Gummy candy", "Fizzy drink"],
+      "answer": 0,
+      "note": "Fruit plus protein is a power-team for steady energy."
+    },
+    {
+      "id": "q2",
+      "q": "Which color should join your plate next?",
+      "options": ["A new veggie color", "Only beige foods", "No colors"],
+      "answer": 0,
+      "note": "Different colors often bring different helpful nutrients."
+    },
+    {
+      "id": "q3",
+      "q": "What is the best everyday drink?",
+      "options": ["Water", "Soda", "Energy drink"],
+      "answer": 0,
+      "note": "Water hydrates your body and brain so you can run and think fast."
+    }
+  ],
+  "miniChallenge": {
+    "title": "Mini challenge",
+    "description": "Find three different food colors in your kitchen with a grown-up.",
+    "cta": "I'll try it →"
+  },
+  "didYouKnow": {
+    "title": "Did you know?",
+    "fact": "Bananas are berries, but strawberries are not botanically berries."
+  }
+}
+

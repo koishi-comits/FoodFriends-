@@ -1,0 +1,130 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800;900&display=swap');
+@import 'tailwindcss';
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: 'Nunito', ui-rounded, system-ui, sans-serif;
+    background: #eaf9ff;
+  }
+
+  button,
+  a,
+  input,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button {
+    cursor: pointer;
+  }
+}
+
+@keyframes scan-orbit {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgb(255 216 77 / 0.22);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 18px rgb(255 216 77 / 0);
+  }
+}
+
+.scan-orbit {
+  animation: scan-orbit 1.4s ease-in-out infinite;
+}
+
+.foodfriends-sky::before,
+.foodfriends-sky::after {
+  position: absolute;
+  content: '';
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.7);
+  box-shadow:
+    42px 8px 0 6px rgb(255 255 255 / 0.7),
+    84px -3px 0 -5px rgb(255 255 255 / 0.7);
+}
+
+.foodfriends-sky::before {
+  width: 70px;
+  height: 24px;
+  top: 30px;
+  right: 38%;
+}
+
+.foodfriends-sky::after {
+  width: 84px;
+  height: 28px;
+  left: 8%;
+  bottom: 30px;
+  opacity: 0.55;
+}
+
+.scanner-frame::before,
+.scanner-frame::after {
+  position: absolute;
+  z-index: 2;
+  width: 38px;
+  height: 38px;
+  content: '';
+  pointer-events: none;
+}
+
+.scanner-frame::before {
+  top: 12px;
+  left: 12px;
+  border-top: 5px solid #32bd55;
+  border-left: 5px solid #32bd55;
+  border-radius: 12px 0 0;
+}
+
+.scanner-frame::after {
+  right: 12px;
+  bottom: 12px;
+  border-right: 5px solid #32bd55;
+  border-bottom: 5px solid #32bd55;
+  border-radius: 0 0 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+.figma-custom-code-fragment {
+  display: contents;
+}
+
+.figma-bypass-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 2147483647;
+  transform: translateY(-150%);
+  border-radius: 6px;
+  background: #111827;
+  color: #fff;
+  padding: 8px 12px;
+  font:
+    600 14px/1.2 system-ui,
+    sans-serif;
+  text-decoration: none;
+}
+
+.figma-bypass-link:focus {
+  transform: translateY(0);
+}

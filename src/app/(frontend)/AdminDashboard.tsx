@@ -1,6 +1,6 @@
-'use client'
+"use client";
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from "react";
 import {
   adminDeleteFoodLogAction,
   adminDeleteUserAction,
@@ -11,142 +11,165 @@ import {
   adminUpdateUserPointsAction,
   type AdminDashboardData,
   type AdminProfileItem,
-} from './actions'
+} from "./actions";
 
-type TabType = 'users' | 'scans' | 'inspect'
+type TabType = "users" | "scans" | "inspect";
 
 export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
-  const [data, setData] = useState<AdminDashboardData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<TabType>('users')
-  const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
-  const [search, setSearch] = useState('')
-  const [isPending, startTransition] = useTransition()
+  const [data, setData] = useState<AdminDashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabType>("users");
+  const [feedback, setFeedback] = useState<{
+    type: "ok" | "err";
+    text: string;
+  } | null>(null);
+  const [search, setSearch] = useState("");
+  const [isPending, startTransition] = useTransition();
 
   // Inspect database state
-  const [inspectTable, setInspectTable] = useState<'profiles' | 'food_logs'>('profiles')
+  const [inspectTable, setInspectTable] = useState<"profiles" | "food_logs">(
+    "profiles",
+  );
   const [inspectData, setInspectData] = useState<{
-    columns: string[]
-    rows: Record<string, unknown>[]
-  } | null>(null)
-  const [inspectLoading, setInspectLoading] = useState(false)
+    columns: string[];
+    rows: Record<string, unknown>[];
+  } | null>(null);
+  const [inspectLoading, setInspectLoading] = useState(false);
 
   // Password reset prompt state
-  const [resetTargetEmail, setResetTargetEmail] = useState<string | null>(null)
+  const [resetTargetEmail, setResetTargetEmail] = useState<string | null>(null);
 
   const loadData = async () => {
-    setLoading(true)
-    const res = await adminGetDashboardDataAction()
+    setLoading(true);
+    const res = await adminGetDashboardDataAction();
     if (res.ok) {
-      setData(res.data)
+      setData(res.data);
     } else {
-      setFeedback({ type: 'err', text: res.error })
+      setFeedback({ type: "err", text: res.error });
     }
-    setLoading(false)
-  }
+    setLoading(false);
+  };
 
-  const loadInspectData = async (table: 'profiles' | 'food_logs') => {
-    setInspectLoading(true)
-    const res = await adminInspectTableAction(table)
+  const loadInspectData = async (table: "profiles" | "food_logs") => {
+    setInspectLoading(true);
+    const res = await adminInspectTableAction(table);
     if (res.ok) {
-      setInspectData(res.data)
+      setInspectData(res.data);
     } else {
-      setFeedback({ type: 'err', text: res.error })
+      setFeedback({ type: "err", text: res.error });
     }
-    setInspectLoading(false)
-  }
+    setInspectLoading(false);
+  };
 
   useEffect(() => {
-    loadData()
-  }, [])
+    loadData();
+  }, []);
 
   useEffect(() => {
-    if (activeTab === 'inspect') {
-      loadInspectData(inspectTable)
+    if (activeTab === "inspect") {
+      loadInspectData(inspectTable);
     }
-  }, [activeTab, inspectTable])
+  }, [activeTab, inspectTable]);
 
   const handleDeleteScan = (scanId: string, foodName: string) => {
-    if (!confirm(`Are you sure you want to delete the food scan "${foodName}"?`)) return
+    if (
+      !confirm(`Are you sure you want to delete the food scan "${foodName}"?`)
+    )
+      return;
     startTransition(async () => {
-      const res = await adminDeleteFoodLogAction(scanId)
+      const res = await adminDeleteFoodLogAction(scanId);
       if (res.ok) {
-        setFeedback({ type: 'ok', text: `Scan "${foodName}" deleted.` })
-        loadData()
+        setFeedback({ type: "ok", text: `Scan "${foodName}" deleted.` });
+        loadData();
       } else {
-        setFeedback({ type: 'err', text: res.error })
+        setFeedback({ type: "err", text: res.error });
       }
-    })
-  }
+    });
+  };
 
   const handleResetPassword = (email: string) => {
     startTransition(async () => {
-      const res = await adminResetUserPasswordAction(email)
+      const res = await adminResetUserPasswordAction(email);
       if (res.ok) {
-        setFeedback({ type: 'ok', text: res.data })
-        setResetTargetEmail(null)
+        setFeedback({ type: "ok", text: res.data });
+        setResetTargetEmail(null);
       } else {
-        setFeedback({ type: 'err', text: res.error })
+        setFeedback({ type: "err", text: res.error });
       }
-    })
-  }
+    });
+  };
 
   const handleUpdatePoints = (user: AdminProfileItem, delta: number) => {
-    const newPoints = Math.max(0, user.points + delta)
+    const newPoints = Math.max(0, user.points + delta);
     startTransition(async () => {
-      const res = await adminUpdateUserPointsAction(user.id, newPoints)
+      const res = await adminUpdateUserPointsAction(user.id, newPoints);
       if (res.ok) {
         setFeedback({
-          type: 'ok',
+          type: "ok",
           text: `Updated ${user.display_name}'s points to ${newPoints}.`,
-        })
-        loadData()
+        });
+        loadData();
       } else {
-        setFeedback({ type: 'err', text: res.error })
+        setFeedback({ type: "err", text: res.error });
       }
-    })
-  }
+    });
+  };
 
   const handleToggleAdmin = (targetUser: AdminProfileItem) => {
-    const nextStatus = !targetUser.is_admin
+    const nextStatus = !targetUser.is_admin;
     const msg = nextStatus
       ? `Promote ${targetUser.display_name} to Administrator?`
-      : `Demote ${targetUser.display_name} to regular Explorer?`
-    if (!confirm(msg)) return
+      : `Demote ${targetUser.display_name} to regular Explorer?`;
+    if (!confirm(msg)) return;
 
     startTransition(async () => {
-      const res = await adminToggleAdminStatusAction(targetUser.id, nextStatus)
+      const res = await adminToggleAdminStatusAction(targetUser.id, nextStatus);
       if (res.ok) {
-        setFeedback({ type: 'ok', text: `Admin role updated for ${targetUser.display_name}.` })
-        loadData()
+        setFeedback({
+          type: "ok",
+          text: `Admin role updated for ${targetUser.display_name}.`,
+        });
+        loadData();
       } else {
-        setFeedback({ type: 'err', text: res.error })
+        setFeedback({ type: "err", text: res.error });
       }
-    })
-  }
+    });
+  };
 
   const handleDeleteUser = (targetUser: AdminProfileItem) => {
     if (
       !confirm(
-        `Are you sure you want to permanently delete explorer "${targetUser.display_name}" (${targetUser.email}) and all their food logs?`
+        `Are you sure you want to permanently delete explorer "${targetUser.display_name}" (${targetUser.email}) and all their food logs?`,
       )
     )
-      return
+      return;
     startTransition(async () => {
-      const res = await adminDeleteUserAction(targetUser.id)
+      const res = await adminDeleteUserAction(targetUser.id);
       if (res.ok) {
-        setFeedback({ type: 'ok', text: `User ${targetUser.display_name} deleted.` })
-        loadData()
+        setFeedback({
+          type: "ok",
+          text: `User ${targetUser.display_name} deleted.`,
+        });
+        loadData();
       } else {
-        setFeedback({ type: 'err', text: res.error })
+        setFeedback({ type: "err", text: res.error });
       }
-    })
-  }
+    });
+  };
 
   // CSV Exporters
   const exportUsersCSV = () => {
-    if (!data?.users.length) return
-    const headers = ['ID', 'Name', 'Email', 'Age Group', 'Points', 'Streak', 'Role', 'Created At']
+    if (!data?.users.length) return;
+    const headers = [
+      "ID",
+      "Name",
+      "Email",
+      "Age Group",
+      "Points",
+      "Streak",
+      "Role",
+      "Created At",
+    ];
     const rows = data.users.map((u) => [
       `"${u.id}"`,
       `"${u.display_name.replace(/"/g, '""')}"`,
@@ -154,21 +177,31 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
       `"${u.age_group}"`,
       u.points,
       u.streak,
-      u.is_admin ? 'Admin' : 'Explorer',
+      u.is_admin ? "Admin" : "Explorer",
       `"${u.created_at}"`,
-    ])
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `foodfriends_explorers_${new Date().toISOString().slice(0, 10)}.csv`
-    link.click()
-  }
+    ]);
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((r) => r.join(",")),
+    ].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `foodfriends_explorers_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+  };
 
   const exportScansCSV = () => {
-    if (!data?.scans.length) return
-    const headers = ['ID', 'Food Name', 'Food Group', 'Score', 'Summary', 'Created At']
+    if (!data?.scans.length) return;
+    const headers = [
+      "ID",
+      "Food Name",
+      "Food Group",
+      "Score",
+      "Summary",
+      "Created At",
+    ];
     const rows = data.scans.map((s) => [
       `"${s.id}"`,
       `"${s.food_name.replace(/"/g, '""')}"`,
@@ -176,30 +209,33 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
       s.score,
       `"${s.summary.replace(/"/g, '""')}"`,
       `"${s.created_at}"`,
-    ])
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `foodfriends_scans_${new Date().toISOString().slice(0, 10)}.csv`
-    link.click()
-  }
+    ]);
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((r) => r.join(",")),
+    ].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `foodfriends_scans_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+  };
 
   const filteredUsers =
     data?.users.filter(
       (u) =>
         u.display_name.toLowerCase().includes(search.toLowerCase()) ||
-        u.email.toLowerCase().includes(search.toLowerCase())
-    ) || []
+        u.email.toLowerCase().includes(search.toLowerCase()),
+    ) || [];
 
   const filteredScans =
     data?.scans.filter(
       (s) =>
         s.food_name.toLowerCase().includes(search.toLowerCase()) ||
         s.food_group.toLowerCase().includes(search.toLowerCase()) ||
-        s.summary.toLowerCase().includes(search.toLowerCase())
-    ) || []
+        s.summary.toLowerCase().includes(search.toLowerCase()),
+    ) || [];
 
   return (
     <div className="mx-auto max-w-5xl space-y-7">
@@ -214,7 +250,8 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
               System Management
             </h1>
             <p className="mt-1 font-semibold text-white/75">
-              Oversee explorer accounts, moderate scans, reset passwords, and inspect data.
+              Oversee explorer accounts, moderate scans, reset passwords, and
+              inspect data.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -240,13 +277,16 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
       {feedback && (
         <div
           className={`flex items-center justify-between rounded-2xl p-4 text-sm font-bold shadow-xs ${
-            feedback.type === 'ok'
-              ? 'bg-[#D9F5D2] text-[#245D1C]'
-              : 'bg-[#F9DDD8] text-[#8C2C20]'
+            feedback.type === "ok"
+              ? "bg-[#D9F5D2] text-[#245D1C]"
+              : "bg-[#F9DDD8] text-[#8C2C20]"
           }`}
         >
           <span>{feedback.text}</span>
-          <button onClick={() => setFeedback(null)} className="text-xs font-black underline">
+          <button
+            onClick={() => setFeedback(null)}
+            className="text-xs font-black underline"
+          >
             Dismiss
           </button>
         </div>
@@ -258,43 +298,43 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
         <div className="flex flex-col gap-4 border-b border-[#E8EEE5] pb-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setActiveTab('users')}
+              onClick={() => setActiveTab("users")}
               className={`rounded-2xl px-5 py-2.5 text-sm font-black transition ${
-                activeTab === 'users'
-                  ? 'bg-[#173C4A] text-white shadow-xs'
-                  : 'bg-[#F2F6F3] text-[#55675C] hover:bg-[#E5ECE7]'
+                activeTab === "users"
+                  ? "bg-[#173C4A] text-white shadow-xs"
+                  : "bg-[#F2F6F3] text-[#55675C] hover:bg-[#E5ECE7]"
               }`}
             >
               👥 Explorers &amp; Password Reset ({data?.users.length || 0})
             </button>
             <button
-              onClick={() => setActiveTab('scans')}
+              onClick={() => setActiveTab("scans")}
               className={`rounded-2xl px-5 py-2.5 text-sm font-black transition ${
-                activeTab === 'scans'
-                  ? 'bg-[#173C4A] text-white shadow-xs'
-                  : 'bg-[#F2F6F3] text-[#55675C] hover:bg-[#E5ECE7]'
+                activeTab === "scans"
+                  ? "bg-[#173C4A] text-white shadow-xs"
+                  : "bg-[#F2F6F3] text-[#55675C] hover:bg-[#E5ECE7]"
               }`}
             >
               🥗 Moderate Scans ({data?.scans.length || 0})
             </button>
             <button
-              onClick={() => setActiveTab('inspect')}
+              onClick={() => setActiveTab("inspect")}
               className={`rounded-2xl px-5 py-2.5 text-sm font-black transition ${
-                activeTab === 'inspect'
-                  ? 'bg-[#173C4A] text-white shadow-xs'
-                  : 'bg-[#F2F6F3] text-[#55675C] hover:bg-[#E5ECE7]'
+                activeTab === "inspect"
+                  ? "bg-[#173C4A] text-white shadow-xs"
+                  : "bg-[#F2F6F3] text-[#55675C] hover:bg-[#E5ECE7]"
               }`}
             >
               🔍 Inspect Database
             </button>
           </div>
 
-          {(activeTab === 'users' || activeTab === 'scans') && (
+          {(activeTab === "users" || activeTab === "scans") && (
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={`Search ${activeTab === 'users' ? 'users' : 'scans'}...`}
+              placeholder={`Search ${activeTab === "users" ? "users" : "scans"}...`}
               className="h-10 w-full rounded-xl border border-[#D5E3DB] bg-[#F9FBFA] px-4 text-sm font-semibold outline-none focus:border-[#173C4A] sm:w-56"
             />
           )}
@@ -303,13 +343,16 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
         {/* ======================================================== */}
         {/* TAB 1: VIEW SIGNED UP USERS & RESET PASSWORDS */}
         {/* ======================================================== */}
-        {activeTab === 'users' && (
+        {activeTab === "users" && (
           <div className="mt-6 space-y-4">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
               <div>
-                <h3 className="text-lg font-black text-[#173C4A]">Registered Explorer Accounts</h3>
+                <h3 className="text-lg font-black text-[#173C4A]">
+                  Registered Explorer Accounts
+                </h3>
                 <p className="text-xs font-semibold text-[#7D8C81]">
-                  View signups, reset passwords on request, and adjust reward points.
+                  View signups, reset passwords on request, and adjust reward
+                  points.
                 </p>
               </div>
               <button
@@ -322,10 +365,14 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
             </div>
 
             {loading ? (
-              <p className="py-10 text-center font-bold text-[#7D8C81]">Loading accounts...</p>
+              <p className="py-10 text-center font-bold text-[#7D8C81]">
+                Loading accounts...
+              </p>
             ) : filteredUsers.length === 0 ? (
               <div className="py-10 text-center">
-                <p className="text-lg font-black text-[#173C4A]">No explorers found</p>
+                <p className="text-lg font-black text-[#173C4A]">
+                  No explorers found
+                </p>
                 <p className="mt-1 text-sm font-semibold text-[#7D8C81]">
                   Accounts created by users will appear here immediately.
                 </p>
@@ -346,8 +393,12 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
                     {filteredUsers.map((u) => (
                       <tr key={u.id} className="hover:bg-[#FAFDF9]">
                         <td className="py-4 pr-4">
-                          <p className="font-black text-[#173C4A]">{u.display_name}</p>
-                          <p className="text-xs font-semibold text-[#8B988F]">{u.email}</p>
+                          <p className="font-black text-[#173C4A]">
+                            {u.display_name}
+                          </p>
+                          <p className="text-xs font-semibold text-[#8B988F]">
+                            {u.email}
+                          </p>
                         </td>
                         <td className="py-4 pr-4 font-bold text-[#4B5E53]">
                           <span className="rounded-lg bg-[#EBF6EE] px-2.5 py-1 text-xs">
@@ -355,7 +406,9 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
                           </span>
                         </td>
                         <td className="py-4 pr-4">
-                          <span className="font-extrabold text-[#173C4A]">⭐ {u.points} pts</span>
+                          <span className="font-extrabold text-[#173C4A]">
+                            ⭐ {u.points} pts
+                          </span>
                           <span className="ml-2 text-xs font-bold text-[#E26938]">
                             🔥 {u.streak}d
                           </span>
@@ -415,13 +468,16 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
         {/* ======================================================== */}
         {/* TAB 2: DELETE INAPPROPRIATE FOOD SCANS OR TEST DATA */}
         {/* ======================================================== */}
-        {activeTab === 'scans' && (
+        {activeTab === "scans" && (
           <div className="mt-6 space-y-4">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
               <div>
-                <h3 className="text-lg font-black text-[#173C4A]">Food Scan Moderation</h3>
+                <h3 className="text-lg font-black text-[#173C4A]">
+                  Food Scan Moderation
+                </h3>
                 <p className="text-xs font-semibold text-[#7D8C81]">
-                  Review all food scans. Delete inappropriate photos, test scans, or spam entries.
+                  Review all food scans. Delete inappropriate photos, test
+                  scans, or spam entries.
                 </p>
               </div>
               <button
@@ -434,10 +490,14 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
             </div>
 
             {loading ? (
-              <p className="py-10 text-center font-bold text-[#7D8C81]">Loading food scans...</p>
+              <p className="py-10 text-center font-bold text-[#7D8C81]">
+                Loading food scans...
+              </p>
             ) : filteredScans.length === 0 ? (
               <div className="py-10 text-center">
-                <p className="text-lg font-black text-[#173C4A]">No food scans yet</p>
+                <p className="text-lg font-black text-[#173C4A]">
+                  No food scans yet
+                </p>
                 <p className="mt-1 text-sm font-semibold text-[#7D8C81]">
                   Scans saved by users will show up here.
                 </p>
@@ -451,7 +511,9 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
                   >
                     <div>
                       <div className="flex items-center justify-between">
-                        <span className="text-base font-black text-[#173C4A]">{s.food_name}</span>
+                        <span className="text-base font-black text-[#173C4A]">
+                          {s.food_name}
+                        </span>
                         <span className="rounded-full bg-[#EAF7DE] px-2.5 py-0.5 text-xs font-black text-[#386D24]">
                           {s.score}/100
                         </span>
@@ -486,13 +548,16 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
         {/* ======================================================== */}
         {/* TAB 3: INSPECT DATABASE WITHOUT WRITING CODE */}
         {/* ======================================================== */}
-        {activeTab === 'inspect' && (
+        {activeTab === "inspect" && (
           <div className="mt-6 space-y-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h3 className="text-lg font-black text-[#173C4A]">Database Inspector</h3>
+                <h3 className="text-lg font-black text-[#173C4A]">
+                  Database Inspector
+                </h3>
                 <p className="text-xs font-semibold text-[#7D8C81]">
-                  Inspect raw tables, columns, and rows directly without writing any SQL code.
+                  Inspect raw tables, columns, and rows directly without writing
+                  any SQL code.
                 </p>
               </div>
 
@@ -501,7 +566,9 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
                 <span className="text-xs font-bold text-[#6B7A70]">Table:</span>
                 <select
                   value={inspectTable}
-                  onChange={(e) => setInspectTable(e.target.value as 'profiles' | 'food_logs')}
+                  onChange={(e) =>
+                    setInspectTable(e.target.value as "profiles" | "food_logs")
+                  }
                   className="h-10 rounded-xl border border-[#D5E3DB] bg-[#F9FBFA] px-3 text-xs font-extrabold text-[#173C4A] outline-none"
                 >
                   <option value="profiles">profiles (User Accounts)</option>
@@ -518,7 +585,9 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
             </div>
 
             {inspectLoading ? (
-              <p className="py-12 text-center font-bold text-[#7D8C81]">Querying database table...</p>
+              <p className="py-12 text-center font-bold text-[#7D8C81]">
+                Querying database table...
+              </p>
             ) : !inspectData || inspectData.rows.length === 0 ? (
               <div className="rounded-2xl border border-[#E8EEE5] bg-[#F9FBFA] py-12 text-center">
                 <p className="text-sm font-bold text-[#7D8C81]">
@@ -531,7 +600,10 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
                   <thead className="border-b border-[#D5E0D7] bg-[#EEF3EF] text-[#425449]">
                     <tr>
                       {inspectData.columns.map((col) => (
-                        <th key={col} className="whitespace-nowrap px-3.5 py-2.5 font-bold">
+                        <th
+                          key={col}
+                          className="whitespace-nowrap px-3.5 py-2.5 font-bold"
+                        >
                           {col}
                         </th>
                       ))}
@@ -544,7 +616,7 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
                           <td
                             key={col}
                             className="max-w-[200px] truncate whitespace-nowrap px-3.5 py-2.5 text-[#28382E]"
-                            title={String(row[col] ?? '')}
+                            title={String(row[col] ?? "")}
                           >
                             {row[col] === null ? (
                               <span className="italic text-gray-400">null</span>
@@ -567,9 +639,13 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
       {resetTargetEmail && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-[28px] border border-[#D5E3DB] bg-white p-6 shadow-2xl">
-            <h3 className="text-xl font-black text-[#173C4A]">Reset User Password</h3>
+            <h3 className="text-xl font-black text-[#173C4A]">
+              Reset User Password
+            </h3>
             <p className="mt-2 text-sm font-semibold text-[#5A6D61]">
-              A password reset link will be sent to <strong>{resetTargetEmail}</strong>. They will receive an email to set a new password.
+              A password reset link will be sent to{" "}
+              <strong>{resetTargetEmail}</strong>. They will receive an email to
+              set a new password.
             </p>
             <div className="mt-6 flex justify-end gap-3">
               <button
@@ -583,12 +659,12 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
                 disabled={isPending}
                 className="rounded-xl bg-[#1D4ED8] px-5 py-2 text-xs font-black text-white hover:bg-[#1E40AF]"
               >
-                {isPending ? 'Sending...' : 'Confirm Reset Password'}
+                {isPending ? "Sending..." : "Confirm Reset Password"}
               </button>
             </div>
           </div>
         </div>
       )}
     </div>
-  )
+  );
 }

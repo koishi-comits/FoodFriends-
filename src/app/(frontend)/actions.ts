@@ -950,26 +950,75 @@ export async function adminGetDashboardDataAction(): Promise<ActionResult<AdminD
 
     const supabase = createAdminClient()
 
-    const [{ data: users, count: userCount }, { data: scans, count: scanCount }] =
-      await Promise.all([
-        supabase
-          .from('profiles')
-          .select('*', { count: 'exact' })
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('food_logs')
-          .select('*', { count: 'exact' })
-          .order('created_at', { ascending: false })
-          .limit(500),
-      ])
+    const [usersRes, scansRes] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('food_logs')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .limit(500),
+    ])
+
+    let usersData = usersRes.data as AdminProfileItem[] | null
+    let userCount = usersRes.count
+
+    if (usersRes.error) {
+      const fallbackUsers = await supabase.from('profiles').select('*', { count: 'exact' })
+      if (fallbackUsers.error) {
+        return { ok: false, error: `Database error (profiles): ${fallbackUsers.error.message}` }
+      }
+      usersData = fallbackUsers.data as AdminProfileItem[] | null
+      userCount = fallbackUsers.count
+    }
+
+    let scansData = scansRes.data as Record<string, unknown>[] | null
+    let scanCount = scansRes.count
+
+    if (scansRes.error) {
+      const fallbackScans = await supabase
+        .from('food_logs')
+        .select('*', { count: 'exact' })
+        .limit(500)
+      if (fallbackScans.error) {
+        return { ok: false, error: `Database error (food_logs): ${fallbackScans.error.message}` }
+      }
+      scansData = fallbackScans.data as Record<string, unknown>[] | null
+      scanCount = fallbackScans.count
+    }
+
+    const parsedScans = (scansData || []).map((row) => parseFoodLogRow(row))
+    const normalizedUsers: AdminProfileItem[] = (usersData || []).map((u) => {
+      const userLogs = parsedScans.filter((s) => s.user_id === u.id)
+      const calc = calculateAccuratePointsAndStreak(userLogs.map((s) => s.created_at))
+      // Reset old hardcoded 120/9999 defaults if user has 0 scans, while keeping any admin bonus points
+      const rawPoints = typeof u.points === 'number' ? u.points : 0
+      const effectivePoints =
+        userLogs.length === 0 && (rawPoints === 120 || rawPoints === 9999)
+          ? 0
+          : Math.max(rawPoints, calc.points)
+
+      return {
+        id: String(u.id),
+        email: String(u.email || 'no-email@foodfriends.com'),
+        display_name: String(u.display_name || 'Explorer'),
+        age_group: String(u.age_group || '7-9'),
+        points: effectivePoints,
+        streak: calc.streak,
+        is_admin: Boolean(u.is_admin),
+        created_at: String(u.created_at || new Date().toISOString()),
+      }
+    })
 
     return {
       ok: true,
       data: {
-        totalUsers: userCount ?? (users?.length || 0),
-        totalScans: scanCount ?? (scans?.length || 0),
-        users: (users as AdminProfileItem[]) || [],
-        scans: (scans || []).map((row) => parseFoodLogRow(row as Record<string, unknown>)),
+        totalUsers: userCount ?? normalizedUsers.length,
+        totalScans: scanCount ?? parsedScans.length,
+        users: normalizedUsers,
+        scans: parsedScans,
       },
     }
   } catch (err: unknown) {
@@ -1066,6 +1115,7 @@ export async function adminDeleteUserAction(targetUserId: string): Promise<Actio
     if (!isAllowed) return { ok: false, error: 'Unauthorized.' }
 
     const supabase = createAdminClient()
+    await supabase.from('food_logs').delete().eq('user_id', targetUserId)
     const { error } = await supabase.from('profiles').delete().eq('id', targetUserId)
     if (error) return { ok: false, error: error.message }
     return { ok: true, data: null }
@@ -1108,11 +1158,26 @@ export async function adminInspectTableAction(
     if (!isAllowed) return { ok: false, error: 'Unauthorized.' }
 
     const supabase = createAdminClient()
-    const { data, error } = await supabase.from(tableName).select('*').limit(50)
+    const { data, error } = await supabase
+      .from(tableName)
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50)
 
     if (error) return { ok: false, error: error.message }
 
-    const rows = (data as Record<string, unknown>[]) || []
+    const rawRows = (data as Record<string, unknown>[]) || []
+    const rows = rawRows.map((row) => {
+      if (tableName === 'food_logs' && typeof row.summary === 'string') {
+        const parsed = parseFoodLogRow(row)
+        return {
+          ...row,
+          summary: parsed.summary,
+          photo_attached: parsed.image_url ? '✅ Yes' : 'No',
+        }
+      }
+      return row
+    })
     const columns = rows.length > 0 ? Object.keys(rows[0]) : []
 
     return { ok: true, data: { columns, rows } }

@@ -1445,6 +1445,64 @@ function compressFoodImage(dataUrl: string): Promise<string> {
   })
 }
 
+function preparePhotoFileForScan(
+  file: File
+): Promise<{ dataUrl: string; base64: string; mime: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Could not read photo file.'))
+    reader.onload = () => {
+      const rawDataUrl = reader.result as string
+      const img = new Image()
+      img.onload = () => {
+        const maxDim = 1024
+        let w = img.width || maxDim
+        let h = img.height || maxDim
+        if (w > maxDim || h > maxDim) {
+          if (w >= h) {
+            h = Math.round((h * maxDim) / w)
+            w = maxDim
+          } else {
+            w = Math.round((w * maxDim) / h)
+            h = maxDim
+          }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          const fallbackBase64 = rawDataUrl.split(',')[1] || ''
+          resolve({
+            dataUrl: rawDataUrl,
+            base64: fallbackBase64,
+            mime: file.type || 'image/jpeg',
+          })
+          return
+        }
+        ctx.drawImage(img, 0, 0, w, h)
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.84)
+        const base64 = compressedDataUrl.split(',')[1] || ''
+        resolve({
+          dataUrl: compressedDataUrl,
+          base64,
+          mime: 'image/jpeg',
+        })
+      }
+      img.onerror = () => {
+        const fallbackBase64 = rawDataUrl.split(',')[1] || ''
+        resolve({
+          dataUrl: rawDataUrl,
+          base64: fallbackBase64,
+          mime: file.type || 'image/jpeg',
+        })
+      }
+      img.src = rawDataUrl
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 function Scanner({
   user,
   onSignIn,
@@ -1483,6 +1541,7 @@ function Scanner({
   const [cameraActive, setCameraActive] = useState(false)
 
   const fileRef = useRef<HTMLInputElement>(null)
+  const mobileCameraRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
@@ -1491,6 +1550,10 @@ function Scanner({
     try {
       setScanError('')
       stopCamera()
+      if (!navigator.mediaDevices?.getUserMedia) {
+        mobileCameraRef.current?.click()
+        return
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
@@ -1514,7 +1577,14 @@ function Scanner({
         }
       }, 100)
     } catch {
-      setScanError('Could not access camera. Please allow camera permissions or upload an image file.')
+      // Fallback to native mobile camera capture if live stream permission is unavailable
+      if (mobileCameraRef.current) {
+        mobileCameraRef.current.click()
+      } else {
+        setScanError(
+          'Could not access camera. Please allow camera permissions or tap Upload Photo.'
+        )
+      }
     }
   }
 
@@ -1531,14 +1601,28 @@ function Scanner({
   const captureFromCamera = () => {
     if (!videoRef.current) return
     const video = videoRef.current
+    const rawW = video.videoWidth || 1280
+    const rawH = video.videoHeight || 720
+    const maxDim = 1024
+    let w = rawW
+    let h = rawH
+    if (w > maxDim || h > maxDim) {
+      if (w >= h) {
+        h = Math.round((h * maxDim) / w)
+        w = maxDim
+      } else {
+        w = Math.round((w * maxDim) / h)
+        h = maxDim
+      }
+    }
     const canvas = document.createElement('canvas')
-    canvas.width = video.videoWidth || 1280
-    canvas.height = video.videoHeight || 720
+    canvas.width = w
+    canvas.height = h
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    ctx.drawImage(video, 0, 0, w, h)
 
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
     const rawBase64 = dataUrl.split(',')[1]
 
     onUpdateScanState({
@@ -1553,28 +1637,27 @@ function Scanner({
     setSaveMessage('')
   }
 
-  // Pick file from device
-  const pickPhoto = (event: ChangeEvent<HTMLInputElement>) => {
+  // Pick file from device (PC or Mobile Gallery / Camera Roll)
+  const pickPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
+    event.target.value = ''
     if (!file) return
     stopCamera()
     setScanError('')
     setSaveMessage('')
 
-    const mime = file.type || 'image/jpeg'
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = reader.result as string
-      const rawBase64 = dataUrl.split(',')[1]
+    try {
+      const prepared = await preparePhotoFileForScan(file)
       onUpdateScanState({
-        photo: dataUrl,
-        photoBase64: rawBase64,
-        photoMime: mime,
+        photo: prepared.dataUrl,
+        photoBase64: prepared.base64,
+        photoMime: prepared.mime,
         result: null,
         saved: false,
       })
+    } catch {
+      setScanError('Could not load the selected photo. Please try another image.')
     }
-    reader.readAsDataURL(file)
   }
 
   // Main scan function - uses Gemini AI Vision autonomously
@@ -1655,12 +1738,24 @@ function Scanner({
       <div className="mt-6 grid gap-6 lg:grid-cols-2 items-start">
         {/* LEFT PANEL: Camera / Image Uploader (Bounded Height) */}
         <section className="flex flex-col justify-between rounded-[30px] border-4 border-white bg-[#F9FEFF] p-5 shadow-[0_8px_0_#B8E9F1] sm:p-6 lg:h-[600px]">
+          {/* Standard file / photo library picker (works on PC, Android & iOS gallery) */}
           <input
+            id="food-photo-upload"
             ref={fileRef}
             onChange={pickPhoto}
             type="file"
+            accept="image/*,image/heic,image/heif,image/jpeg,image/png,image/webp"
+            className="sr-only"
+          />
+          {/* Native mobile camera capture input */}
+          <input
+            id="food-mobile-camera"
+            ref={mobileCameraRef}
+            onChange={pickPhoto}
+            type="file"
             accept="image/*"
-            className="hidden"
+            capture="environment"
+            className="sr-only"
           />
 
           {/* Viewport: Live Camera OR Photo Preview OR Empty Placeholder */}
@@ -1751,17 +1846,18 @@ function Scanner({
                   </p>
                   <div className="mt-4 flex flex-wrap justify-center gap-2.5">
                     <button
+                      type="button"
                       onClick={startCamera}
                       className="inline-flex items-center gap-2 rounded-2xl bg-[#58CF70] px-4 py-2.5 text-xs font-black text-white shadow transition hover:bg-[#48b95e] active:scale-95"
                     >
                       📷 Open Camera
                     </button>
-                    <button
-                      onClick={() => fileRef.current?.click()}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-xs font-black text-[#254336] shadow transition hover:bg-[#F0F5F1] active:scale-95"
+                    <label
+                      htmlFor="food-photo-upload"
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-xs font-black text-[#254336] shadow transition hover:bg-[#F0F5F1] active:scale-95"
                     >
                       📁 Upload Photo
-                    </button>
+                    </label>
                   </div>
                 </div>
               </div>
@@ -1772,17 +1868,18 @@ function Scanner({
           {photo && !cameraActive && (
             <div className="mt-2.5 flex justify-between gap-2 text-xs">
               <button
+                type="button"
                 onClick={startCamera}
                 className="font-black text-[#347384] hover:underline"
               >
                 📷 Switch to Live Camera
               </button>
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="font-black text-[#347384] hover:underline"
+              <label
+                htmlFor="food-photo-upload"
+                className="cursor-pointer font-black text-[#347384] hover:underline"
               >
                 📁 Choose Different Photo
-              </button>
+              </label>
             </div>
           )}
 

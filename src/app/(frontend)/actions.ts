@@ -79,6 +79,8 @@ async function fetchAccurateUserStats(userId?: string | null): Promise<{
     let query = adminDb
       .from('food_logs')
       .select('created_at')
+      .neq('id', '00000000-0000-0000-0000-000000000b17')
+      .neq('food_name', 'BrainBitesConfig')
       .neq('food_group', '__brain_bites__')
       .order('created_at', { ascending: false })
 
@@ -733,6 +735,8 @@ export async function getFoodLogsAction(): Promise<ActionResult<FoodLogItem[]>> 
     let query = adminDb
       .from('food_logs')
       .select('id, user_id, food_name, food_group, score, summary, created_at')
+      .neq('id', '00000000-0000-0000-0000-000000000b17')
+      .neq('food_name', 'BrainBitesConfig')
       .neq('food_group', '__brain_bites__')
       .order('created_at', { ascending: false })
       .limit(50)
@@ -960,6 +964,8 @@ export async function adminGetDashboardDataAction(): Promise<ActionResult<AdminD
       supabase
         .from('food_logs')
         .select('*', { count: 'exact' })
+        .neq('id', '00000000-0000-0000-0000-000000000b17')
+        .neq('food_name', 'BrainBitesConfig')
         .neq('food_group', '__brain_bites__')
         .order('created_at', { ascending: false })
         .limit(500),
@@ -984,6 +990,8 @@ export async function adminGetDashboardDataAction(): Promise<ActionResult<AdminD
       const fallbackScans = await supabase
         .from('food_logs')
         .select('*', { count: 'exact' })
+        .neq('id', '00000000-0000-0000-0000-000000000b17')
+        .neq('food_name', 'BrainBitesConfig')
         .neq('food_group', '__brain_bites__')
         .limit(500)
       if (fallbackScans.error) {
@@ -1169,7 +1177,10 @@ export async function adminInspectTableAction(
       .limit(50)
 
     if (tableName === 'food_logs') {
-      query = query.neq('food_group', '__brain_bites__')
+      query = query
+        .neq('id', '00000000-0000-0000-0000-000000000b17')
+        .neq('food_name', 'BrainBitesConfig')
+        .neq('food_group', '__brain_bites__')
     }
 
     const { data, error } = await query
@@ -1283,10 +1294,12 @@ export type BrainBitesQuestion = {
   options: string[]
   answer: number
   note: string
+  category?: string
 }
 
 export type BrainBitesData = {
   questions: BrainBitesQuestion[]
+  deletedQuestionIds?: string[]
   miniChallenge: {
     title: string
     description: string
@@ -1299,37 +1312,45 @@ export type BrainBitesData = {
 }
 
 const BRAIN_BITES_ROW_ID = '00000000-0000-0000-0000-000000000b17'
-const BRAIN_BITES_GROUP = '__brain_bites__'
+const BRAIN_BITES_CONFIG_NAME = 'BrainBitesConfig'
 
 const DEFAULT_BRAIN_BITES: BrainBitesData = {
   questions: [
     {
       id: 'q1',
-      q: 'Which snack gives you long-lasting energy?',
-      options: ['Apple & peanut butter', 'Gummy candy', 'Fizzy drink'],
+      q: 'Which snack gives you long-lasting energy for school and play?',
+      options: ['Apple slices & peanut butter', 'Gummy candy', 'Fizzy soda drink'],
       answer: 0,
-      note: 'Fruit plus protein is a power-team for steady energy.',
+      note: 'Fruit plus protein is a power-team for steady energy that lasts for hours!',
+      category: 'fruit',
     },
     {
       id: 'q2',
-      q: 'Which color should join your plate next?',
-      options: ['A new veggie color', 'Only beige foods', 'No colors'],
+      q: "Why do we call a healthy meal a 'Rainbow Plate'?",
+      options: [
+        'Different food colors give different vitamins',
+        'The plate is painted like a rainbow',
+        'It only has skittles on it',
+      ],
       answer: 0,
-      note: 'Different colors often bring different helpful nutrients.',
+      note: 'Red, orange, green, purple, and white whole foods each carry unique nutrients!',
+      category: 'habits',
     },
     {
       id: 'q3',
-      q: 'What is the best everyday drink?',
-      options: ['Water', 'Soda', 'Energy drink'],
+      q: 'What is the best everyday drink for your brain and muscles?',
+      options: ['Fresh water', 'Sugary soda', 'Energy drink'],
       answer: 0,
-      note: 'Water hydrates your body and brain so you can run and think fast.',
+      note: 'Water hydrates your body and brain so you can run fast and think clearly.',
+      category: 'dairy',
     },
     {
       id: 'q4',
-      q: 'Which nutrient in milk and yogurt helps build strong bones and teeth?',
+      q: 'Which mineral in milk, cheese, and yogurt builds strong bones and teeth?',
       options: ['Calcium', 'Added sugar', 'Food coloring'],
       answer: 0,
-      note: 'Calcium teams up with Vitamin D to make your bones and teeth super strong!',
+      note: 'Calcium teams up with Vitamin D to make your growing bones and teeth super strong!',
+      category: 'dairy',
     },
     {
       id: 'q5',
@@ -1337,6 +1358,7 @@ const DEFAULT_BRAIN_BITES: BrainBitesData = {
       options: ['Vitamin A for sharp eyes', 'Making you sleepy', 'Turning your hair blue'],
       answer: 0,
       note: 'Orange veggies are rich in beta-carotene (Vitamin A), which helps your eyes see clearly!',
+      category: 'vegetable',
     },
     {
       id: 'q6',
@@ -1344,8 +1366,230 @@ const DEFAULT_BRAIN_BITES: BrainBitesData = {
       options: ['Slow-release fiber & brain fuel', 'They have zero nutrients', 'They replace water'],
       answer: 0,
       note: 'Whole grains have fiber and B-vitamins that fuel your brain all morning long!',
+      category: 'grain',
+    },
+    {
+      id: 'q7',
+      q: 'Which vitamin in oranges, strawberries, and bell peppers helps fight off colds?',
+      options: ['Vitamin C', 'Refined salt', 'Cooking oil'],
+      answer: 0,
+      note: 'Vitamin C is an immune-system superhero that helps your body heal and stay healthy!',
+      category: 'fruit',
+    },
+    {
+      id: 'q8',
+      q: 'Which food group acts like building blocks to repair and grow your muscles?',
+      options: ['Proteins like eggs, chicken, fish, and beans', 'Hard candies', 'Potato chips'],
+      answer: 0,
+      note: 'Proteins are made of amino acids that build strong muscles and help you grow taller!',
+      category: 'protein',
+    },
+    {
+      id: 'q9',
+      q: 'What helpful nutrient in apples, berries, and broccoli keeps your tummy happy?',
+      options: ['Dietary fiber', 'Artificial dye', 'Extra frosting'],
+      answer: 0,
+      note: 'Fiber helps your digestion work smoothly and keeps you feeling full and satisfied!',
+      category: 'fruit',
+    },
+    {
+      id: 'q10',
+      q: "Why are blueberries and purple grapes called 'Brain Berries'?",
+      options: [
+        'Their antioxidants help memory and focus',
+        'They make your tongue glow',
+        'They are shaped like brains',
+      ],
+      answer: 0,
+      note: 'Blue and purple fruits contain anthocyanins that protect brain cells and boost memory!',
+      category: 'fruit',
+    },
+    {
+      id: 'q11',
+      q: 'What mineral in spinach, lentils, and lean meat helps carry oxygen in your blood?',
+      options: ['Iron', 'Plastic', 'Helium'],
+      answer: 0,
+      note: "Iron carries fresh oxygen from your lungs to your muscles and brain so you don't feel tired!",
+      category: 'vegetable',
+    },
+    {
+      id: 'q12',
+      q: 'Which nutrient in bananas helps stop muscle cramps when you run and play?',
+      options: ['Potassium', 'Melted butter', 'Caramel'],
+      answer: 0,
+      note: 'Bananas are famous for potassium, an electrolyte mineral that keeps muscles and hearts happy!',
+      category: 'fruit',
+    },
+    {
+      id: 'q13',
+      q: 'What are the friendly tiny helpers inside yogurt that help your digestion?',
+      options: ['Probiotics', 'Fizzy bubbles', 'Sprinkles'],
+      answer: 0,
+      note: 'Probiotics are friendly good bacteria that live in your tummy and help digest food!',
+      category: 'dairy',
+    },
+    {
+      id: 'q14',
+      q: 'Which of these is a plant-based protein superhero?',
+      options: ['Beans, lentils, and tofu', 'Cotton candy', 'Lollipops'],
+      answer: 0,
+      note: 'Beans, lentils, chickpeas, nuts, and tofu pack awesome protein plus tummy-friendly fiber!',
+      category: 'protein',
+    },
+    {
+      id: 'q15',
+      q: "How much of your brain's daily energy comes from the food you eat?",
+      options: [
+        'About 20% (one-fifth of your energy!)',
+        "0% — brains don't need food",
+        '100% — muscles use none',
+      ],
+      answer: 0,
+      note: "Your brain is always thinking and learning, so it uses about 20% of all your body's fuel!",
+      category: 'habits',
+    },
+    {
+      id: 'q16',
+      q: 'Why is it better to eat a whole orange instead of drinking orange-flavored soda?',
+      options: [
+        'Real fruit has natural fiber and Vitamin C without extra sugar',
+        'Oranges are louder to chew',
+        'Soda has too many seeds',
+      ],
+      answer: 0,
+      note: 'Whole fruits keep their natural fiber and vitamins, giving you smooth energy without a sugar crash!',
+      category: 'fruit',
+    },
+    {
+      id: 'q17',
+      q: 'Which green vegetable looks like a tiny tree and has more Vitamin C per gram than an orange?',
+      options: ['Broccoli', 'Iceberg lettuce', 'Celery'],
+      answer: 0,
+      note: 'Broccoli florets look like little trees and are packed with Vitamin C, Vitamin K, and fiber!',
+      category: 'vegetable',
+    },
+    {
+      id: 'q18',
+      q: 'What do red fruits and veggies like tomatoes and watermelon have that helps your heart?',
+      options: ['Lycopene', 'Maple syrup', 'Baking soda'],
+      answer: 0,
+      note: 'Lycopene gives tomatoes and watermelons their bright red color and helps keep your heart strong!',
+      category: 'vegetable',
+    },
+    {
+      id: 'q19',
+      q: "Which vitamin works as Calcium's best friend to help your bones absorb strength?",
+      options: ['Vitamin D (the sunshine vitamin!)', 'Corn syrup', 'Black pepper'],
+      answer: 0,
+      note: 'Vitamin D from fortified milk, eggs, fish, and safe sunshine helps calcium lock into your bones!',
+      category: 'dairy',
+    },
+    {
+      id: 'q20',
+      q: "What happens when you eat 'sometimes treats' like cookies or candy on an empty stomach?",
+      options: [
+        'A quick sugar spike followed by a sleepy crash',
+        'Instant super-strength for 10 hours',
+        'You grow two inches taller',
+      ],
+      answer: 0,
+      note: 'Sugary treats burn up super fast! Pairing snacks with protein or fiber keeps your energy steady.',
+      category: 'habits',
+    },
+    {
+      id: 'q21',
+      q: "Which fish nutrient is famous for helping kids' brains and eyes grow super sharp?",
+      options: ['Omega-3 healthy fats', 'Table salt', 'Breadcrumbs'],
+      answer: 0,
+      note: 'Salmon, tuna, and sardines have Omega-3 fatty acids that build healthy brain connections!',
+      category: 'protein',
+    },
+    {
+      id: 'q22',
+      q: 'Which of these snacks is a whole grain?',
+      options: ['Air-popped popcorn or oatmeal', 'Gummy bears', 'Potato crisps'],
+      answer: 0,
+      note: 'Popcorn is actually a whole grain corn kernel! Lightly seasoned popcorn has plenty of fiber.',
+      category: 'grain',
+    },
+    {
+      id: 'q23',
+      q: 'Why does chewing your food slowly help your body?',
+      options: [
+        "It helps your tummy digest nutrients easily and notice when you're full",
+        'It makes food colder',
+        'It turns veggies into cake',
+      ],
+      answer: 0,
+      note: 'Digestion starts in your mouth! Chewing well helps your stomach unlock every vitamin.',
+      category: 'habits',
+    },
+    {
+      id: 'q24',
+      q: 'Which fruit is about 92% water and helps keep you hydrated on a hot sunny day?',
+      options: ['Watermelon', 'Dried raisins', 'Banana chips'],
+      answer: 0,
+      note: 'Watermelon, strawberries, and cucumbers are packed with refreshing water and vitamins!',
+      category: 'fruit',
+    },
+    {
+      id: 'q25',
+      q: 'What vitamin in leafy greens like spinach and kale helps your skin heal when you get a scrape?',
+      options: ['Vitamin K', 'Chocolate syrup', 'Vinegar'],
+      answer: 0,
+      note: 'Vitamin K helps your blood clot when you get a tiny scrape so your skin can heal fast!',
+      category: 'vegetable',
+    },
+    {
+      id: 'q26',
+      q: 'What is a smart way to build a balanced plate for lunch or dinner?',
+      options: [
+        'Half fruits & veggies, a quarter whole grains, and a quarter protein',
+        'All french fries and ketchup',
+        'Only dessert first',
+      ],
+      answer: 0,
+      note: 'Filling half your plate with colorful fruits and veggies gives you vitamins, fiber, and steady energy!',
+      category: 'habits',
+    },
+    {
+      id: 'q27',
+      q: 'Which of these breakfast foods gives you strong protein to start the morning?',
+      options: ['Scrambled or boiled eggs', 'Frosted donut', 'Sweetened fruit punch'],
+      answer: 0,
+      note: 'Eggs pack complete protein, choline for your brain, and Vitamin D for your bones!',
+      category: 'protein',
+    },
+    {
+      id: 'q28',
+      q: 'What color were the very first carrots grown by farmers hundreds of years ago?',
+      options: ['Purple and yellow', 'Bright neon blue', 'Polka-dotted'],
+      answer: 0,
+      note: 'Ancient carrots were purple and yellow before orange carrots became popular—and purple carrots still exist!',
+      category: 'vegetable',
+    },
+    {
+      id: 'q29',
+      q: 'Why do athletes eat carbohydrates like brown rice, pasta, or bananas before a big game?',
+      options: [
+        'Carbohydrates store quick-access fuel in your muscles',
+        'To make their shoes heavier',
+        "So they don't need to drink water",
+      ],
+      answer: 0,
+      note: "Healthy carbs are your body's favorite fuel tank for running, jumping, and playing sports!",
+      category: 'grain',
+    },
+    {
+      id: 'q30',
+      q: 'Which creamy green fruit is packed with healthy fats that help your body absorb vitamins?',
+      options: ['Avocado', 'Green jellybean', 'Sour lime candy'],
+      answer: 0,
+      note: 'Avocados are a fruit rich in heart-healthy fats, fiber, and potassium!',
+      category: 'fruit',
     },
   ],
+  deletedQuestionIds: [],
   miniChallenge: {
     title: 'Rainbow Kitchen Quest',
     description: 'Find three different food colors in your kitchen or meal today and check them off!',
@@ -1355,6 +1599,27 @@ const DEFAULT_BRAIN_BITES: BrainBitesData = {
     title: 'Did you know?',
     fact: 'Bananas are berries, but strawberries are not botanically berries!',
   },
+}
+
+function mergeWithStarterBank(loaded: BrainBitesData): BrainBitesData {
+  const deletedSet = new Set(loaded.deletedQuestionIds || [])
+  const existingMap = new Map<string, BrainBitesQuestion>()
+  for (const q of loaded.questions || []) {
+    if (q && q.id && !deletedSet.has(q.id)) {
+      existingMap.set(q.id, q)
+    }
+  }
+  for (const starter of DEFAULT_BRAIN_BITES.questions) {
+    if (!deletedSet.has(starter.id) && !existingMap.has(starter.id)) {
+      existingMap.set(starter.id, starter)
+    }
+  }
+  return {
+    questions: Array.from(existingMap.values()),
+    deletedQuestionIds: Array.from(deletedSet),
+    miniChallenge: loaded.miniChallenge || DEFAULT_BRAIN_BITES.miniChallenge,
+    didYouKnow: loaded.didYouKnow || DEFAULT_BRAIN_BITES.didYouKnow,
+  }
 }
 
 async function readBrainBitesFile(): Promise<BrainBitesData> {
@@ -1370,7 +1635,7 @@ async function readBrainBitesFile(): Promise<BrainBitesData> {
     if (!error && data?.summary) {
       const parsed = JSON.parse(String(data.summary)) as BrainBitesData
       if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-        return parsed
+        return mergeWithStarterBank(parsed)
       }
     }
   } catch {
@@ -1383,7 +1648,7 @@ async function readBrainBitesFile(): Promise<BrainBitesData> {
     const content = await fs.readFile(filePath, 'utf-8')
     const parsed = JSON.parse(content) as BrainBitesData
     if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
-      return parsed
+      return mergeWithStarterBank(parsed)
     }
   } catch {
     // Ignore read error
@@ -1393,17 +1658,28 @@ async function readBrainBitesFile(): Promise<BrainBitesData> {
 }
 
 async function writeBrainBitesFile(data: BrainBitesData): Promise<void> {
-  // 1. Persist in Supabase so it works on Vercel (where filesystem is read-only)
+  // 1. Persist in Supabase using a valid food_group ('fruit') so Postgres check constraints never reject it
   try {
     const supabase = createAdminClient()
-    await supabase.from('food_logs').upsert({
+    const payload = {
       id: BRAIN_BITES_ROW_ID,
-      user_id: null,
-      food_name: 'BrainBitesConfig',
-      food_group: BRAIN_BITES_GROUP,
+      user_id: null as string | null,
+      food_name: BRAIN_BITES_CONFIG_NAME,
+      food_group: 'fruit',
       score: 100,
       summary: JSON.stringify(data),
-    })
+    }
+    const { error } = await supabase.from('food_logs').upsert(payload)
+    if (error) {
+      // If user_id has a NOT NULL constraint in Supabase, attach to any existing profile ID
+      const { data: anyProfile } = await supabase.from('profiles').select('id').limit(1).maybeSingle()
+      if (anyProfile?.id) {
+        await supabase.from('food_logs').upsert({
+          ...payload,
+          user_id: String(anyProfile.id),
+        })
+      }
+    }
   } catch {
     // Ignore DB error if offline
   }
@@ -1422,6 +1698,14 @@ async function writeBrainBitesFile(data: BrainBitesData): Promise<void> {
 export async function generateAiQuizQuestionAction(
   topic?: string
 ): Promise<ActionResult<BrainBitesQuestion>> {
+  const isAllowed = await verifyAdmin()
+  if (!isAllowed) {
+    return {
+      ok: false,
+      error: 'Unauthorized: Question generation and management is restricted to Administrators.',
+    }
+  }
+
   const cleanTopic = clean(topic, 60) || 'healthy foods, vitamins, and rainbow nutrition'
   const fallbackPool: Omit<BrainBitesQuestion, 'id'>[] = [
     {
@@ -1429,24 +1713,32 @@ export async function generateAiQuizQuestionAction(
       options: ['Vitamin C', 'Refined sugar', 'Cooking oil'],
       answer: 0,
       note: 'Vitamin C is an immune-system superhero found in citrus fruits, berries, and bell peppers!',
+      category: 'fruit',
     },
     {
       q: 'What does dietary fiber in apples, beans, and broccoli help your body do?',
       options: ['Keep your tummy happy & full', 'Make your teeth turn green', 'Replace sleep'],
       answer: 0,
       note: 'Fiber feeds friendly gut bacteria and helps your digestion work smoothly!',
+      category: 'vegetable',
     },
     {
       q: 'Which food group is the best builder for strong muscles after playing sports?',
       options: ['Mighty Proteins (eggs, fish, beans, chicken)', 'Sticky candies', 'Soda pop'],
       answer: 0,
       note: 'Protein provides amino acids, the building blocks your muscles need to grow and repair!',
+      category: 'protein',
     },
     {
       q: 'Why do green leafy vegetables like spinach and broccoli make you feel energized?',
-      options: ['They contain iron and folate for healthy blood', 'They are full of caffeine', 'They glow in the dark'],
+      options: [
+        'They contain iron and folate for healthy blood',
+        'They are full of caffeine',
+        'They glow in the dark',
+      ],
       answer: 0,
       note: 'Iron helps carry oxygen all through your body so you never feel tired!',
+      category: 'vegetable',
     },
   ]
 
@@ -1461,7 +1753,8 @@ Return ONLY valid JSON with this exact shape (no markdown code fences):
   "q": "Question text here?",
   "options": ["Choice A", "Choice B", "Choice C"],
   "answer": 0,
-  "note": "One cheerful sentence explaining why the answer is right!"
+  "note": "One cheerful sentence explaining why the answer is right!",
+  "category": "fruit"
 }`
 
       const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash']
@@ -1491,6 +1784,7 @@ Return ONLY valid JSON with this exact shape (no markdown code fences):
                 ],
                 answer: Math.max(0, Math.min(2, Number(parsed.answer) || 0)),
                 note: clean(parsed.note, 200) || 'Healthy foods give your body awesome superpowers!',
+                category: clean(parsed.category, 20) || 'habits',
               },
             }
           }
@@ -1543,13 +1837,19 @@ export async function adminSaveBrainBitesQuestionAction(
       options: question.options.map((o) => clean(o, 80)).filter(Boolean),
       answer: Math.max(0, Math.min(question.options.length - 1, Number(question.answer) || 0)),
       note: clean(question.note, 200),
+      category: clean(question.category, 20) || 'habits',
     }
 
     const existingIndex = current.questions.findIndex((q) => q.id === id)
     if (existingIndex >= 0) {
       current.questions[existingIndex] = cleanQuestion
     } else {
-      current.questions.push(cleanQuestion)
+      // Put newly added admin questions at the front so they are prioritized in the daily 15!
+      current.questions.unshift(cleanQuestion)
+    }
+
+    if (current.deletedQuestionIds) {
+      current.deletedQuestionIds = current.deletedQuestionIds.filter((delId) => delId !== id)
     }
 
     await writeBrainBitesFile(current)
@@ -1569,6 +1869,9 @@ export async function adminDeleteBrainBitesQuestionAction(
 
     const current = await readBrainBitesFile()
     current.questions = current.questions.filter((q) => q.id !== questionId)
+    const deletedSet = new Set(current.deletedQuestionIds || [])
+    deletedSet.add(questionId)
+    current.deletedQuestionIds = Array.from(deletedSet)
 
     await writeBrainBitesFile(current)
     return { ok: true, data: current }

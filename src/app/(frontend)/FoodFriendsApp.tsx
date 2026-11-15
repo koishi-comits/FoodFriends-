@@ -766,6 +766,7 @@ export default function FoodFriendsApp({
           )}
           {view === 'learn' && (
             <Learn
+              userId={user?.id || 'guest'}
               isAdmin={Boolean(user?.isAdmin)}
               onScanFood={() => navigate('scan')}
               onAskBananini={(promptText) => {
@@ -2443,60 +2444,468 @@ function ExplorerLogView({
   )
 }
 
+const DAILY_QUIZ_LIMIT = 15
+
+const INITIAL_QUESTION_BANK: BrainBitesQuestion[] = [
+  {
+    id: 'q1',
+    q: 'Which snack gives you long-lasting energy for school and play?',
+    options: ['Apple slices & peanut butter', 'Gummy candy', 'Fizzy soda drink'],
+    answer: 0,
+    note: 'Fruit plus protein is a power-team for steady energy that lasts for hours!',
+    category: 'fruit',
+  },
+  {
+    id: 'q2',
+    q: "Why do we call a healthy meal a 'Rainbow Plate'?",
+    options: [
+      'Different food colors give different vitamins',
+      'The plate is painted like a rainbow',
+      'It only has skittles on it',
+    ],
+    answer: 0,
+    note: 'Red, orange, green, purple, and white whole foods each carry unique nutrients!',
+    category: 'habits',
+  },
+  {
+    id: 'q3',
+    q: 'What is the best everyday drink for your brain and muscles?',
+    options: ['Fresh water', 'Sugary soda', 'Energy drink'],
+    answer: 0,
+    note: 'Water hydrates your body and brain so you can run fast and think clearly.',
+    category: 'dairy',
+  },
+  {
+    id: 'q4',
+    q: 'Which mineral in milk, cheese, and yogurt builds strong bones and teeth?',
+    options: ['Calcium', 'Added sugar', 'Food coloring'],
+    answer: 0,
+    note: 'Calcium teams up with Vitamin D to make your growing bones and teeth super strong!',
+    category: 'dairy',
+  },
+  {
+    id: 'q5',
+    q: 'What superpower do orange veggies like carrots and sweet potatoes have?',
+    options: ['Vitamin A for sharp eyes', 'Making you sleepy', 'Turning your hair blue'],
+    answer: 0,
+    note: 'Orange veggies are rich in beta-carotene (Vitamin A), which helps your eyes see clearly!',
+    category: 'vegetable',
+  },
+  {
+    id: 'q6',
+    q: 'Why are whole grains like oatmeal and brown rice great for breakfast?',
+    options: ['Slow-release fiber & brain fuel', 'They have zero nutrients', 'They replace water'],
+    answer: 0,
+    note: 'Whole grains have fiber and B-vitamins that fuel your brain all morning long!',
+    category: 'grain',
+  },
+  {
+    id: 'q7',
+    q: 'Which vitamin in oranges, strawberries, and bell peppers helps fight off colds?',
+    options: ['Vitamin C', 'Refined salt', 'Cooking oil'],
+    answer: 0,
+    note: 'Vitamin C is an immune-system superhero that helps your body heal and stay healthy!',
+    category: 'fruit',
+  },
+  {
+    id: 'q8',
+    q: 'Which food group acts like building blocks to repair and grow your muscles?',
+    options: ['Proteins like eggs, chicken, fish, and beans', 'Hard candies', 'Potato chips'],
+    answer: 0,
+    note: 'Proteins are made of amino acids that build strong muscles and help you grow taller!',
+    category: 'protein',
+  },
+  {
+    id: 'q9',
+    q: 'What helpful nutrient in apples, berries, and broccoli keeps your tummy happy?',
+    options: ['Dietary fiber', 'Artificial dye', 'Extra frosting'],
+    answer: 0,
+    note: 'Fiber helps your digestion work smoothly and keeps you feeling full and satisfied!',
+    category: 'fruit',
+  },
+  {
+    id: 'q10',
+    q: "Why are blueberries and purple grapes called 'Brain Berries'?",
+    options: [
+      'Their antioxidants help memory and focus',
+      'They make your tongue glow',
+      'They are shaped like brains',
+    ],
+    answer: 0,
+    note: 'Blue and purple fruits contain anthocyanins that protect brain cells and boost memory!',
+    category: 'fruit',
+  },
+  {
+    id: 'q11',
+    q: 'What mineral in spinach, lentils, and lean meat helps carry oxygen in your blood?',
+    options: ['Iron', 'Plastic', 'Helium'],
+    answer: 0,
+    note: "Iron carries fresh oxygen from your lungs to your muscles and brain so you don't feel tired!",
+    category: 'vegetable',
+  },
+  {
+    id: 'q12',
+    q: 'Which nutrient in bananas helps stop muscle cramps when you run and play?',
+    options: ['Potassium', 'Melted butter', 'Caramel'],
+    answer: 0,
+    note: 'Bananas are famous for potassium, an electrolyte mineral that keeps muscles and hearts happy!',
+    category: 'fruit',
+  },
+  {
+    id: 'q13',
+    q: 'What are the friendly tiny helpers inside yogurt that help your digestion?',
+    options: ['Probiotics', 'Fizzy bubbles', 'Sprinkles'],
+    answer: 0,
+    note: 'Probiotics are friendly good bacteria that live in your tummy and help digest food!',
+    category: 'dairy',
+  },
+  {
+    id: 'q14',
+    q: 'Which of these is a plant-based protein superhero?',
+    options: ['Beans, lentils, and tofu', 'Cotton candy', 'Lollipops'],
+    answer: 0,
+    note: 'Beans, lentils, chickpeas, nuts, and tofu pack awesome protein plus tummy-friendly fiber!',
+    category: 'protein',
+  },
+  {
+    id: 'q15',
+    q: "How much of your brain's daily energy comes from the food you eat?",
+    options: [
+      'About 20% (one-fifth of your energy!)',
+      "0% — brains don't need food",
+      '100% — muscles use none',
+    ],
+    answer: 0,
+    note: "Your brain is always thinking and learning, so it uses about 20% of all your body's fuel!",
+    category: 'habits',
+  },
+  {
+    id: 'q16',
+    q: 'Why is it better to eat a whole orange instead of drinking orange-flavored soda?',
+    options: [
+      'Real fruit has natural fiber and Vitamin C without extra sugar',
+      'Oranges are louder to chew',
+      'Soda has too many seeds',
+    ],
+    answer: 0,
+    note: 'Whole fruits keep their natural fiber and vitamins, giving you smooth energy without a sugar crash!',
+    category: 'fruit',
+  },
+  {
+    id: 'q17',
+    q: 'Which green vegetable looks like a tiny tree and has more Vitamin C per gram than an orange?',
+    options: ['Broccoli', 'Iceberg lettuce', 'Celery'],
+    answer: 0,
+    note: 'Broccoli florets look like little trees and are packed with Vitamin C, Vitamin K, and fiber!',
+    category: 'vegetable',
+  },
+  {
+    id: 'q18',
+    q: 'What do red fruits and veggies like tomatoes and watermelon have that helps your heart?',
+    options: ['Lycopene', 'Maple syrup', 'Baking soda'],
+    answer: 0,
+    note: 'Lycopene gives tomatoes and watermelons their bright red color and helps keep your heart strong!',
+    category: 'vegetable',
+  },
+  {
+    id: 'q19',
+    q: "Which vitamin works as Calcium's best friend to help your bones absorb strength?",
+    options: ['Vitamin D (the sunshine vitamin!)', 'Corn syrup', 'Black pepper'],
+    answer: 0,
+    note: 'Vitamin D from fortified milk, eggs, fish, and safe sunshine helps calcium lock into your bones!',
+    category: 'dairy',
+  },
+  {
+    id: 'q20',
+    q: "What happens when you eat 'sometimes treats' like cookies or candy on an empty stomach?",
+    options: [
+      'A quick sugar spike followed by a sleepy crash',
+      'Instant super-strength for 10 hours',
+      'You grow two inches taller',
+    ],
+    answer: 0,
+    note: 'Sugary treats burn up super fast! Pairing snacks with protein or fiber keeps your energy steady.',
+    category: 'habits',
+  },
+  {
+    id: 'q21',
+    q: "Which fish nutrient is famous for helping kids' brains and eyes grow super sharp?",
+    options: ['Omega-3 healthy fats', 'Table salt', 'Breadcrumbs'],
+    answer: 0,
+    note: 'Salmon, tuna, and sardines have Omega-3 fatty acids that build healthy brain connections!',
+    category: 'protein',
+  },
+  {
+    id: 'q22',
+    q: 'Which of these snacks is a whole grain?',
+    options: ['Air-popped popcorn or oatmeal', 'Gummy bears', 'Potato crisps'],
+    answer: 0,
+    note: 'Popcorn is actually a whole grain corn kernel! Lightly seasoned popcorn has plenty of fiber.',
+    category: 'grain',
+  },
+  {
+    id: 'q23',
+    q: 'Why does chewing your food slowly help your body?',
+    options: [
+      "It helps your tummy digest nutrients easily and notice when you're full",
+      'It makes food colder',
+      'It turns veggies into cake',
+    ],
+    answer: 0,
+    note: 'Digestion starts in your mouth! Chewing well helps your stomach unlock every vitamin.',
+    category: 'habits',
+  },
+  {
+    id: 'q24',
+    q: 'Which fruit is about 92% water and helps keep you hydrated on a hot sunny day?',
+    options: ['Watermelon', 'Dried raisins', 'Banana chips'],
+    answer: 0,
+    note: 'Watermelon, strawberries, and cucumbers are packed with refreshing water and vitamins!',
+    category: 'fruit',
+  },
+  {
+    id: 'q25',
+    q: 'What vitamin in leafy greens like spinach and kale helps your skin heal when you get a scrape?',
+    options: ['Vitamin K', 'Chocolate syrup', 'Vinegar'],
+    answer: 0,
+    note: 'Vitamin K helps your blood clot when you get a tiny scrape so your skin can heal fast!',
+    category: 'vegetable',
+  },
+  {
+    id: 'q26',
+    q: 'What is a smart way to build a balanced plate for lunch or dinner?',
+    options: [
+      'Half fruits & veggies, a quarter whole grains, and a quarter protein',
+      'All french fries and ketchup',
+      'Only dessert first',
+    ],
+    answer: 0,
+    note: 'Filling half your plate with colorful fruits and veggies gives you vitamins, fiber, and steady energy!',
+    category: 'habits',
+  },
+  {
+    id: 'q27',
+    q: 'Which of these breakfast foods gives you strong protein to start the morning?',
+    options: ['Scrambled or boiled eggs', 'Frosted donut', 'Sweetened fruit punch'],
+    answer: 0,
+    note: 'Eggs pack complete protein, choline for your brain, and Vitamin D for your bones!',
+    category: 'protein',
+  },
+  {
+    id: 'q28',
+    q: 'What color were the very first carrots grown by farmers hundreds of years ago?',
+    options: ['Purple and yellow', 'Bright neon blue', 'Polka-dotted'],
+    answer: 0,
+    note: 'Ancient carrots were purple and yellow before orange carrots became popular—and purple carrots still exist!',
+    category: 'vegetable',
+  },
+  {
+    id: 'q29',
+    q: 'Why do athletes eat carbohydrates like brown rice, pasta, or bananas before a big game?',
+    options: [
+      'Carbohydrates store quick-access fuel in your muscles',
+      'To make their shoes heavier',
+      "So they don't need to drink water",
+    ],
+    answer: 0,
+    note: "Healthy carbs are your body's favorite fuel tank for running, jumping, and playing sports!",
+    category: 'grain',
+  },
+  {
+    id: 'q30',
+    q: 'Which creamy green fruit is packed with healthy fats that help your body absorb vitamins?',
+    options: ['Avocado', 'Green jellybean', 'Sour lime candy'],
+    answer: 0,
+    note: 'Avocados are a fruit rich in heart-healthy fats, fiber, and potassium!',
+    category: 'fruit',
+  },
+]
+
+function getTodayDateString(): string {
+  const now = new Date()
+  const yyyy = now.getFullYear()
+  const mm = String(now.getMonth() + 1).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function getTimeUntilMidnightLabel(): string {
+  const now = new Date()
+  const midnight = new Date(now)
+  midnight.setHours(24, 0, 0, 0)
+  const diffMs = Math.max(0, midnight.getTime() - now.getTime())
+  const hours = Math.floor(diffMs / (1000 * 60 * 60))
+  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+  return `${hours}h ${minutes}m`
+}
+
+function hashStringSeed(str: string): number {
+  let h = 2166136261
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return Math.abs(h)
+}
+
+function inferQuestionCategory(item: BrainBitesQuestion): string {
+  if (item.category) return item.category
+  const text = `${item.q} ${item.note}`.toLowerCase()
+  if (text.includes('milk') || text.includes('calcium') || text.includes('yogurt') || text.includes('water'))
+    return 'dairy'
+  if (text.includes('carrot') || text.includes('broccoli') || text.includes('spinach') || text.includes('veggie'))
+    return 'vegetable'
+  if (text.includes('grain') || text.includes('oat') || text.includes('rice') || text.includes('popcorn') || text.includes('carb'))
+    return 'grain'
+  if (text.includes('protein') || text.includes('muscle') || text.includes('egg') || text.includes('bean') || text.includes('fish'))
+    return 'protein'
+  if (text.includes('fruit') || text.includes('apple') || text.includes('banana') || text.includes('berry') || text.includes('orange') || text.includes('watermelon') || text.includes('avocado'))
+    return 'fruit'
+  return 'habits'
+}
+
+function selectDaily15Questions(
+  bank: BrainBitesQuestion[],
+  dateKey: string
+): BrainBitesQuestion[] {
+  const source = bank.length >= DAILY_QUIZ_LIMIT ? bank : INITIAL_QUESTION_BANK
+  // Prioritize any custom admin-created questions first so admin updates show immediately
+  const starterIds = new Set(INITIAL_QUESTION_BANK.map((q) => q.id))
+  const customAdminQuestions = source.filter((q) => !starterIds.has(q.id))
+  const standardQuestions = source.filter((q) => starterIds.has(q.id))
+
+  // Deterministic daily sort for standard questions based on dateKey + question ID
+  const sortedStandard = [...standardQuestions].sort((a, b) => {
+    const scoreA = hashStringSeed(`${dateKey}_${a.id}`)
+    const scoreB = hashStringSeed(`${dateKey}_${b.id}`)
+    return scoreA - scoreB
+  })
+
+  const combined = [...customAdminQuestions, ...sortedStandard].slice(0, DAILY_QUIZ_LIMIT)
+
+  // Deterministically shuffle options A/B/C for each question so Choice A isn't always the right answer
+  return combined.map((item) => {
+    const opts = item.options.slice(0, 3)
+    const correctText = opts[item.answer] ?? opts[0]
+    const shift = hashStringSeed(`${dateKey}_opt_${item.id}`) % opts.length
+    const rotated = opts.map((_, idx) => opts[(idx + shift) % opts.length])
+    const newAnswerIdx = Math.max(0, rotated.indexOf(correctText))
+    return {
+      ...item,
+      category: inferQuestionCategory(item),
+      options: rotated,
+      answer: newAnswerIdx,
+    }
+  })
+}
+
+type DailyLearnSessionState = {
+  dateKey: string
+  index: number
+  score: number
+  finished: boolean
+  combo: number
+  bestCombo: number
+  hintsLeft: number
+  xpEarnedToday: number
+  answeredRecords: { qId: string; chosen: number; correct: boolean }[]
+}
+
+type CumulativeLearnProfile = {
+  totalXp: number
+  totalAnswered: number
+  totalCorrect: number
+  daysCompleted: number
+  lastCompletedDate: string
+  masteryByCategory: Record<string, number>
+  studiedCards: string[]
+}
+
+const LEARNING_LEVELS = [
+  { level: 1, title: 'Curious Sprout', icon: '🌱', minXp: 0, nextXp: 100 },
+  { level: 2, title: 'Crunch Detective', icon: '🥕', minXp: 100, nextXp: 250 },
+  { level: 3, title: 'Berry Brainiac', icon: '🍓', minXp: 250, nextXp: 450 },
+  { level: 4, title: 'Veggie Guardian', icon: '🥦', minXp: 450, nextXp: 700 },
+  { level: 5, title: 'Rainbow Chef', icon: '🌈', minXp: 700, nextXp: 1000 },
+  { level: 6, title: 'Grand Food Master', icon: '👑', minXp: 1000, nextXp: 1500 },
+]
+
+const SUPERFOOD_COLLECTIBLE_CARDS = [
+  {
+    id: 'card_bananini',
+    name: 'Golden Bananini',
+    role: 'Potassium Spark',
+    emoji: '🍌',
+    unlockXp: 0,
+    bg: '#FFF4C2',
+    power: 'Stops muscle cramps & fuels playground sprints!',
+    secret: 'Bananas float in water just like apples and watermelons!',
+  },
+  {
+    id: 'card_carrot',
+    name: 'Captain Carrot',
+    role: 'Night-Vision Ranger',
+    emoji: '🥕',
+    unlockXp: 50,
+    bg: '#FFE6D1',
+    power: 'Loaded with Beta-Carotene (Vitamin A) for eagle-sharp eyes!',
+    secret: 'The very first farmed carrots were purple and yellow!',
+  },
+  {
+    id: 'card_broccoli',
+    name: 'Sir Broccoli',
+    role: 'Emerald Tree Shield',
+    emoji: '🥦',
+    unlockXp: 120,
+    bg: '#DCF5E3',
+    power: 'Has more Vitamin C per gram than an orange plus bone-building Vitamin K!',
+    secret: 'Each tiny dot on top of broccoli is actually a baby flower bud!',
+  },
+  {
+    id: 'card_berry',
+    name: 'Berry Blaster',
+    role: 'Memory Guardian',
+    emoji: '🫐',
+    unlockXp: 220,
+    bg: '#E8E2FA',
+    power: 'Blue & purple anthocyanins supercharge brain memory and focus!',
+    secret: 'Strawberries are the only fruit that wear their seeds on the outside!',
+  },
+  {
+    id: 'card_oats',
+    name: 'Professor Oats',
+    role: 'Steady Rocket Fuel',
+    emoji: '🌾',
+    unlockXp: 350,
+    bg: '#FDF0D5',
+    power: 'Whole-grain fiber releases energy slowly for 4+ hours of focus!',
+    secret: 'Popcorn is actually a member of the healthy whole-grain family!',
+  },
+  {
+    id: 'card_calcium',
+    name: 'Mighty Yogurt',
+    role: 'Bone & Tummy Hero',
+    emoji: '🥛',
+    unlockXp: 500,
+    bg: '#DFF0FC',
+    power: 'Packs Calcium for unbreakable bones plus billions of friendly probiotics!',
+    secret: 'Your teeth and bones store 99% of all the calcium in your body!',
+  },
+]
+
 function Learn({
+  userId = 'guest',
   isAdmin = false,
   onScanFood,
   onAskBananini,
 }: {
+  userId?: string
   isAdmin?: boolean
   onScanFood?: () => void
   onAskBananini?: (promptText: string) => void
 }) {
   const [brainData, setBrainData] = useState<BrainBitesData>({
-    questions: [
-      {
-        id: 'q1',
-        q: 'Which snack gives you long-lasting energy?',
-        options: ['Apple & peanut butter', 'Gummy candy', 'Fizzy drink'],
-        answer: 0,
-        note: 'Fruit plus protein is a power-team for steady energy.',
-      },
-      {
-        id: 'q2',
-        q: 'Which color should join your plate next?',
-        options: ['A new veggie color', 'Only beige foods', 'No colors'],
-        answer: 0,
-        note: 'Different colors often bring different helpful nutrients.',
-      },
-      {
-        id: 'q3',
-        q: 'What is the best everyday drink?',
-        options: ['Water', 'Soda', 'Energy drink'],
-        answer: 0,
-        note: 'Water hydrates your body and brain so you can run and think fast.',
-      },
-      {
-        id: 'q4',
-        q: 'Which nutrient in milk and yogurt helps build strong bones and teeth?',
-        options: ['Calcium', 'Added sugar', 'Food coloring'],
-        answer: 0,
-        note: 'Calcium teams up with Vitamin D to make your bones and teeth super strong!',
-      },
-      {
-        id: 'q5',
-        q: 'What superpower do orange veggies like carrots and sweet potatoes have?',
-        options: ['Vitamin A for sharp eyes', 'Making you sleepy', 'Turning your hair blue'],
-        answer: 0,
-        note: 'Orange veggies are rich in beta-carotene (Vitamin A), which helps your eyes see clearly!',
-      },
-      {
-        id: 'q6',
-        q: 'Why are whole grains like oatmeal and brown rice great for breakfast?',
-        options: ['Slow-release fiber & brain fuel', 'They have zero nutrients', 'They replace water'],
-        answer: 0,
-        note: 'Whole grains have fiber and B-vitamins that fuel your brain all morning long!',
-      },
-    ],
+    questions: INITIAL_QUESTION_BANK,
     miniChallenge: {
       title: 'Rainbow Kitchen Quest',
       description: 'Find three different food colors in your kitchen or meal today and check them off!',
@@ -2507,12 +2916,46 @@ function Learn({
       fact: 'Bananas are berries, but strawberries are not botanically berries!',
     },
   })
+
+  const [todayKey, setTodayKey] = useState<string>(() => getTodayDateString())
+  const [refreshCountdown, setRefreshCountdown] = useState<string>(() => getTimeUntilMidnightLabel())
+
+  // Daily 15-Question Quiz State
   const [index, setIndex] = useState(0)
   const [answer, setAnswer] = useState<number | null>(null)
   const [score, setScore] = useState(0)
   const [finished, setFinished] = useState(false)
-  const [generatingAiQ, setGeneratingAiQ] = useState(false)
-  const [isPending, startTransition] = useTransition()
+  const [combo, setCombo] = useState(0)
+  const [bestCombo, setBestCombo] = useState(0)
+  const [hintsLeft, setHintsLeft] = useState(3)
+  const [eliminatedOption, setEliminatedOption] = useState<number | null>(null)
+  const [xpEarnedToday, setXpEarnedToday] = useState(0)
+  const [lastXpGain, setLastXpGain] = useState<number | null>(null)
+  const [answeredRecords, setAnsweredRecords] = useState<
+    { qId: string; chosen: number; correct: boolean }[]
+  >([])
+
+  // Cumulative Learning Progress State
+  const [learnProfile, setLearnProfile] = useState<CumulativeLearnProfile>({
+    totalXp: 0,
+    totalAnswered: 0,
+    totalCorrect: 0,
+    daysCompleted: 0,
+    lastCompletedDate: '',
+    masteryByCategory: {
+      fruit: 15,
+      vegetable: 15,
+      grain: 10,
+      protein: 10,
+      dairy: 15,
+      habits: 20,
+    },
+    studiedCards: [],
+  })
+
+  // Interactive Learning Hub Bottom Tab ('mastery' | 'cards' | 'guide')
+  const [activeLearnTab, setActiveLearnTab] = useState<'mastery' | 'cards' | 'guide'>('mastery')
+  const [flippedCardId, setFlippedCardId] = useState<string | null>('card_bananini')
 
   // Interactive Mini Challenge State
   const [challengeActive, setChallengeActive] = useState(false)
@@ -2524,21 +2967,25 @@ function Learn({
   // Interactive Superpower Food Guide State
   const [activeGuideGroup, setActiveGuideGroup] = useState<string>('fruit')
 
-  // Admin Management State
+  // Strictly Admin-Only Management State
+  const [generatingAiQ, setGeneratingAiQ] = useState(false)
+  const [isPending, startTransition] = useTransition()
   const [manageOpen, setManageOpen] = useState(false)
+  const [adminBankFilter, setAdminBankFilter] = useState<string>('all')
   const [editingQuestion, setEditingQuestion] = useState<BrainBitesQuestion | null>(null)
   const [isAddingQuestion, setIsAddingQuestion] = useState(false)
   const [confirmDeleteQId, setConfirmDeleteQId] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
-  // Question Form State
+  // Admin Question Form State
   const [qTitle, setQTitle] = useState('')
   const [qOptions, setQOptions] = useState<[string, string, string]>(['', '', ''])
   const [qAnswer, setQAnswer] = useState<number>(0)
   const [qNote, setQNote] = useState('')
+  const [qCategory, setQCategory] = useState<string>('fruit')
   const [aiDraftLoading, setAiDraftLoading] = useState(false)
 
-  // Extras Form State
+  // Admin Extras Form State
   const [challengeTitle, setChallengeTitle] = useState('Rainbow Kitchen Quest')
   const [challengeDesc, setChallengeDesc] = useState(
     'Find three different food colors in your kitchen or meal today and check them off!'
@@ -2549,6 +2996,10 @@ function Learn({
     'Bananas are berries, but strawberries are not botanically berries!'
   )
 
+  const dailyStorageKey = `foodfriends_daily_learn_v2_${userId}`
+  const profileStorageKey = `foodfriends_learn_profile_v2_${userId}`
+
+  // Load Question Bank from Server
   useEffect(() => {
     getBrainBitesDataAction().then((res) => {
       if (res.ok && res.data && res.data.questions?.length) {
@@ -2561,6 +3012,172 @@ function Learn({
       }
     })
   }, [])
+
+  // Load user's Daily 15 Quiz state & Cumulative Learning Progress, and refresh automatically when date changes
+  useEffect(() => {
+    const currentDay = getTodayDateString()
+    setTodayKey(currentDay)
+    setRefreshCountdown(getTimeUntilMidnightLabel())
+
+    try {
+      const rawProfile = window.localStorage.getItem(profileStorageKey)
+      if (rawProfile) {
+        const parsedProfile = JSON.parse(rawProfile) as Partial<CumulativeLearnProfile>
+        setLearnProfile((prev) => ({
+          ...prev,
+          ...parsedProfile,
+          masteryByCategory: {
+            ...prev.masteryByCategory,
+            ...(parsedProfile.masteryByCategory || {}),
+          },
+        }))
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    try {
+      const rawDaily = window.localStorage.getItem(dailyStorageKey)
+      if (rawDaily) {
+        const parsedDaily = JSON.parse(rawDaily) as DailyLearnSessionState
+        // If stored session is from TODAY, restore progress; otherwise it refreshes for the new day!
+        if (parsedDaily && parsedDaily.dateKey === currentDay) {
+          setIndex(Math.min(DAILY_QUIZ_LIMIT - 1, Math.max(0, parsedDaily.index || 0)))
+          setScore(parsedDaily.score || 0)
+          setFinished(Boolean(parsedDaily.finished))
+          setCombo(parsedDaily.combo || 0)
+          setBestCombo(parsedDaily.bestCombo || 0)
+          setHintsLeft(typeof parsedDaily.hintsLeft === 'number' ? parsedDaily.hintsLeft : 3)
+          setXpEarnedToday(parsedDaily.xpEarnedToday || 0)
+          setAnsweredRecords(Array.isArray(parsedDaily.answeredRecords) ? parsedDaily.answeredRecords : [])
+          return
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    // Fresh day reset (15 new questions for today!)
+    setIndex(0)
+    setAnswer(null)
+    setScore(0)
+    setFinished(false)
+    setCombo(0)
+    setBestCombo(0)
+    setHintsLeft(3)
+    setEliminatedOption(null)
+    setXpEarnedToday(0)
+    setAnsweredRecords([])
+  }, [dailyStorageKey, profileStorageKey])
+
+  // Update countdown timer every minute & auto-refresh at midnight
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const nowDay = getTodayDateString()
+      setRefreshCountdown(getTimeUntilMidnightLabel())
+      if (nowDay !== todayKey) {
+        setTodayKey(nowDay)
+        setIndex(0)
+        setAnswer(null)
+        setScore(0)
+        setFinished(false)
+        setCombo(0)
+        setBestCombo(0)
+        setHintsLeft(3)
+        setEliminatedOption(null)
+        setXpEarnedToday(0)
+        setAnsweredRecords([])
+      }
+    }, 30000)
+    return () => window.clearInterval(timer)
+  }, [todayKey])
+
+  const saveDailyState = (nextState: DailyLearnSessionState) => {
+    try {
+      window.localStorage.setItem(dailyStorageKey, JSON.stringify(nextState))
+    } catch {
+      // ignore
+    }
+  }
+
+  const saveProfileState = (nextProfile: CumulativeLearnProfile) => {
+    setLearnProfile(nextProfile)
+    try {
+      window.localStorage.setItem(profileStorageKey, JSON.stringify(nextProfile))
+    } catch {
+      // ignore
+    }
+  }
+
+  // Deterministically select today's 15 questions from the Question Bank
+  const dailyQuestions: BrainBitesQuestion[] = selectDaily15Questions(
+    brainData.questions,
+    todayKey
+  )
+  const q = dailyQuestions[index] || dailyQuestions[0]
+
+  // Calculate current Learning Rank & Level Progress
+  const currentRank =
+    [...LEARNING_LEVELS].reverse().find((lvl) => learnProfile.totalXp >= lvl.minXp) ||
+    LEARNING_LEVELS[0]
+  const levelSpan = Math.max(1, currentRank.nextXp - currentRank.minXp)
+  const levelProgressPct = Math.min(
+    100,
+    Math.round(((learnProfile.totalXp - currentRank.minXp) / levelSpan) * 100)
+  )
+  const unlockedCardsCount = SUPERFOOD_COLLECTIBLE_CARDS.filter(
+    (c) => learnProfile.totalXp >= c.unlockXp
+  ).length
+
+  const categoryMeta: Record<
+    string,
+    { label: string; emoji: string; badgeBg: string; badgeText: string; barColor: string }
+  > = {
+    fruit: {
+      label: 'Fruit Fiesta',
+      emoji: '🍎',
+      badgeBg: '#FDE8E8',
+      badgeText: '#9E2A2B',
+      barColor: '#E45B4E',
+    },
+    vegetable: {
+      label: 'Veggie Vault',
+      emoji: '🥦',
+      badgeBg: '#E3F6E8',
+      badgeText: '#1E6939',
+      barColor: '#4EA865',
+    },
+    grain: {
+      label: 'Grain Train',
+      emoji: '🌾',
+      badgeBg: '#FFF4D4',
+      badgeText: '#7D5714',
+      barColor: '#E09F3E',
+    },
+    protein: {
+      label: 'Protein Power',
+      emoji: '🍗',
+      badgeBg: '#EFE4F7',
+      badgeText: '#5A2D82',
+      barColor: '#8E5EA2',
+    },
+    dairy: {
+      label: 'Dairy & Hydration',
+      emoji: '🥛',
+      badgeBg: '#E2F2FC',
+      badgeText: '#1B5886',
+      barColor: '#4A90E2',
+    },
+    habits: {
+      label: 'Rainbow Habits',
+      emoji: '🌈',
+      badgeBg: '#EAF7DE',
+      badgeText: '#287A52',
+      barColor: '#287A52',
+    },
+  }
+
+  const currentQCat = categoryMeta[q?.category || 'habits'] || categoryMeta.habits
 
   const extraFacts = [
     brainData.didYouKnow.fact ||
@@ -2583,9 +3200,22 @@ function Learn({
   ]
 
   const toggleChallengeColor = (colorId: string) => {
-    setCheckedColors((prev) =>
-      prev.includes(colorId) ? prev.filter((id) => id !== colorId) : [...prev, colorId]
-    )
+    setCheckedColors((prev) => {
+      const exists = prev.includes(colorId)
+      const next = exists ? prev.filter((id) => id !== colorId) : [...prev, colorId]
+      // Award +15 bonus XP the first time 3 rainbow colors are checked!
+      if (!exists && next.length === 3) {
+        saveProfileState({
+          ...learnProfile,
+          totalXp: learnProfile.totalXp + 15,
+          masteryByCategory: {
+            ...learnProfile.masteryByCategory,
+            habits: Math.min(100, (learnProfile.masteryByCategory.habits || 0) + 12),
+          },
+        })
+      }
+      return next
+    })
   }
 
   const foodGuideGroups = [
@@ -2599,6 +3229,8 @@ function Learn({
       examples: 'Apples, bananas, berries, mangoes, oranges, watermelon',
       summary:
         'Fruits are nature’s colorful snack! Their Vitamin C protects you from sniffles while natural fiber keeps your energy smooth.',
+      flashcardSecret:
+        'Eating a whole apple with its skin gives you 4x more tummy-friendly fiber than drinking apple juice!',
     },
     {
       id: 'vegetable',
@@ -2610,6 +3242,8 @@ function Learn({
       examples: 'Broccoli, carrots, spinach, bell peppers, cucumbers, sweet corn',
       summary:
         'Different veggie colors unlock different powers—orange veggies sharpen your eyes, and leafy greens build strong blood and bones!',
+      flashcardSecret:
+        'Red bell peppers actually have nearly 3x more Vitamin C than an orange!',
     },
     {
       id: 'grain',
@@ -2621,6 +3255,8 @@ function Learn({
       examples: 'Oatmeal, brown rice, whole-wheat bread, corn, quinoa',
       summary:
         'Whole grains release energy slowly like a steady battery so you can focus in class and run fast on the playground.',
+      flashcardSecret:
+        'Oatmeal contains a special fiber called beta-glucan that keeps your heart and tummy super happy!',
     },
     {
       id: 'protein',
@@ -2632,6 +3268,8 @@ function Learn({
       examples: 'Eggs, chicken, fish, beans, lentils, tofu, peanut butter',
       summary:
         'Proteins are your body’s building blocks! They repair muscles, help you grow taller, and keep you full for hours.',
+      flashcardSecret:
+        'Your hair, fingernails, and muscles are all built out of tiny protein chains called amino acids!',
     },
     {
       id: 'dairy',
@@ -2643,31 +3281,198 @@ function Learn({
       examples: 'Milk, yogurt, cheese, fortified soy or almond milk',
       summary:
         'Calcium and Vitamin D work together like armor for your growing bones and teeth, while yogurt probiotics help your tummy!',
+      flashcardSecret:
+        'Cheese and yogurt are fermented by friendly bacteria that make them easier for your tummy to digest!',
+    },
+    {
+      id: 'habits',
+      emoji: '🌈',
+      name: 'Rainbow Habits',
+      power: 'Smart Balance & Hydration',
+      color: '#EAF7DE',
+      vitamins: ['Hydration', 'Mindful Chewing', 'Rainbow Variety', 'Sleep & Play'],
+      examples: 'Drinking 6-8 glasses of water, eating 3+ colors per meal',
+      summary:
+        'Combining colorful whole foods, drinking plenty of water, and enjoying treats in small portions makes you a true Food Explorer!',
+      flashcardSecret:
+        'Drinking a glass of water in the morning wakes up your brain 14% faster for school!',
     },
   ]
 
   const currentGuide =
     foodGuideGroups.find((g) => g.id === activeGuideGroup) || foodGuideGroups[0]
 
-  const handleAddBonusAiQuestion = async (customTopic?: string) => {
-    if (generatingAiQ) return
+  const handleStudyFlashcard = (groupId: string) => {
+    const studyKey = `${todayKey}_${groupId}`
+    if (learnProfile.studiedCards.includes(studyKey)) return
+    const nextProfile: CumulativeLearnProfile = {
+      ...learnProfile,
+      totalXp: learnProfile.totalXp + 10,
+      masteryByCategory: {
+        ...learnProfile.masteryByCategory,
+        [groupId]: Math.min(100, (learnProfile.masteryByCategory[groupId] || 10) + 12),
+      },
+      studiedCards: [...learnProfile.studiedCards, studyKey],
+    }
+    saveProfileState(nextProfile)
+  }
+
+  const handleUseBananiniHint = () => {
+    if (answer !== null || hintsLeft <= 0 || eliminatedOption !== null) return
+    const wrongIndices = q.options
+      .map((_, idx) => idx)
+      .filter((idx) => idx !== q.answer)
+    if (wrongIndices.length === 0) return
+    const toEliminate = wrongIndices[0]
+    const nextHints = hintsLeft - 1
+    setEliminatedOption(toEliminate)
+    setHintsLeft(nextHints)
+    saveDailyState({
+      dateKey: todayKey,
+      index,
+      score,
+      finished,
+      combo,
+      bestCombo,
+      hintsLeft: nextHints,
+      xpEarnedToday,
+      answeredRecords,
+    })
+  }
+
+  const choose = (choice: number) => {
+    if (answer !== null || finished) return
+    setAnswer(choice)
+    const isRight = choice === q.answer
+    const nextScore = isRight ? score + 1 : score
+    const nextCombo = isRight ? combo + 1 : 0
+    const nextBestCombo = Math.max(bestCombo, nextCombo)
+    const gainedXp = isRight ? 10 + Math.min(15, nextCombo * 2) : 3
+    const nextXpToday = xpEarnedToday + gainedXp
+    const nextRecords = [...answeredRecords, { qId: q.id, chosen: choice, correct: isRight }]
+
+    setScore(nextScore)
+    setCombo(nextCombo)
+    setBestCombo(nextBestCombo)
+    setXpEarnedToday(nextXpToday)
+    setLastXpGain(gainedXp)
+    setAnsweredRecords(nextRecords)
+
+    const catKey = q.category || 'habits'
+    const currentCatMastery = learnProfile.masteryByCategory[catKey] || 10
+    const nextMastery = Math.min(100, currentCatMastery + (isRight ? 10 : 3))
+
+    saveProfileState({
+      ...learnProfile,
+      totalXp: learnProfile.totalXp + gainedXp,
+      totalAnswered: learnProfile.totalAnswered + 1,
+      totalCorrect: learnProfile.totalCorrect + (isRight ? 1 : 0),
+      masteryByCategory: {
+        ...learnProfile.masteryByCategory,
+        [catKey]: nextMastery,
+      },
+    })
+
+    saveDailyState({
+      dateKey: todayKey,
+      index,
+      score: nextScore,
+      finished: false,
+      combo: nextCombo,
+      bestCombo: nextBestCombo,
+      hintsLeft,
+      xpEarnedToday: nextXpToday,
+      answeredRecords: nextRecords,
+    })
+  }
+
+  const next = () => {
+    setEliminatedOption(null)
+    setLastXpGain(null)
+    if (index >= dailyQuestions.length - 1) {
+      setFinished(true)
+      // Award +25 Daily Completion Bonus XP!
+      if (learnProfile.lastCompletedDate !== todayKey) {
+        saveProfileState({
+          ...learnProfile,
+          totalXp: learnProfile.totalXp + 25,
+          daysCompleted: learnProfile.daysCompleted + 1,
+          lastCompletedDate: todayKey,
+        })
+      }
+      saveDailyState({
+        dateKey: todayKey,
+        index,
+        score,
+        finished: true,
+        combo,
+        bestCombo,
+        hintsLeft,
+        xpEarnedToday: xpEarnedToday + 25,
+        answeredRecords,
+      })
+    } else {
+      const nextIdx = index + 1
+      setIndex(nextIdx)
+      setAnswer(null)
+      saveDailyState({
+        dateKey: todayKey,
+        index: nextIdx,
+        score,
+        finished: false,
+        combo,
+        bestCombo,
+        hintsLeft,
+        xpEarnedToday,
+        answeredRecords,
+      })
+    }
+  }
+
+  // Strictly Admin-Only: Reset Today's 15 Quiz for Admin Testing
+  const handleAdminResetDailyQuiz = () => {
+    if (!isAdmin) return
+    setIndex(0)
+    setAnswer(null)
+    setScore(0)
+    setFinished(false)
+    setCombo(0)
+    setBestCombo(0)
+    setHintsLeft(3)
+    setEliminatedOption(null)
+    setXpEarnedToday(0)
+    setAnsweredRecords([])
+    try {
+      window.localStorage.removeItem(dailyStorageKey)
+    } catch {
+      // ignore
+    }
+    setFeedback({
+      type: 'ok',
+      text: "🔄 Admin Test Reset: Today's 15-question counter has been reset for your admin preview.",
+    })
+  }
+
+  // Strictly Admin-Only: Generate AI Question & Save Directly into Question Bank
+  const handleAdminGenerateAiQuestionToBank = async () => {
+    if (!isAdmin || generatingAiQ) return
     setGeneratingAiQ(true)
     setFeedback(null)
     try {
-      const res = await generateAiQuizQuestionAction(customTopic)
+      const res = await generateAiQuizQuestionAction()
       if (res.ok) {
-        const newQ = res.data
-        setBrainData((prev) => {
-          const nextQuestions = [...prev.questions, newQ]
-          setIndex(nextQuestions.length - 1)
-          setAnswer(null)
-          setFinished(false)
-          return { ...prev, questions: nextQuestions }
-        })
-        setFeedback({
-          type: 'ok',
-          text: '✨ Bananini created a fresh AI bonus question for you!',
-        })
+        const saved = await adminSaveBrainBitesQuestionAction(res.data)
+        if (saved.ok) {
+          setBrainData(saved.data)
+          setFeedback({
+            type: 'ok',
+            text: `✨ AI Question added to the Question Bank (${saved.data.questions.length} total questions)!`,
+          })
+        } else {
+          setFeedback({ type: 'err', text: saved.error })
+        }
+      } else {
+        setFeedback({ type: 'err', text: res.error })
       }
     } finally {
       setGeneratingAiQ(false)
@@ -2675,10 +3480,12 @@ function Learn({
   }
 
   const handleAutoFillModalWithAi = async () => {
-    if (aiDraftLoading) return
+    if (!isAdmin || aiDraftLoading) return
     setAiDraftLoading(true)
     try {
-      const res = await generateAiQuizQuestionAction(qTitle || 'fun nutrition superpowers for kids')
+      const res = await generateAiQuizQuestionAction(
+        qTitle || `${qCategory} nutrition superpowers for kids`
+      )
       if (res.ok) {
         setQTitle(res.data.q)
         setQOptions([
@@ -2688,6 +3495,7 @@ function Learn({
         ])
         setQAnswer(res.data.answer)
         setQNote(res.data.note)
+        if (res.data.category) setQCategory(res.data.category)
       }
     } finally {
       setAiDraftLoading(false)
@@ -2695,25 +3503,30 @@ function Learn({
   }
 
   const openNewQuestionModal = () => {
+    if (!isAdmin) return
     setEditingQuestion(null)
     setQTitle('')
     setQOptions(['', '', ''])
     setQAnswer(0)
     setQNote('')
+    setQCategory('fruit')
     setIsAddingQuestion(true)
   }
 
   const openEditQuestionModal = (item: BrainBitesQuestion) => {
+    if (!isAdmin) return
     setEditingQuestion(item)
     setQTitle(item.q)
     setQOptions([item.options[0] || '', item.options[1] || '', item.options[2] || ''])
     setQAnswer(item.answer)
     setQNote(item.note)
+    setQCategory(inferQuestionCategory(item))
     setIsAddingQuestion(true)
   }
 
   const handleSaveQuestion = (e: React.FormEvent) => {
     e.preventDefault()
+    if (!isAdmin) return
     if (!qTitle.trim() || !qOptions[0].trim() || !qOptions[1].trim()) {
       setFeedback({
         type: 'err',
@@ -2729,6 +3542,7 @@ function Learn({
         options: qOptions.map((o) => o.trim()).filter(Boolean),
         answer: qAnswer,
         note: qNote.trim(),
+        category: qCategory,
       }
       const res = await adminSaveBrainBitesQuestionAction(payload)
       if (res.ok) {
@@ -2736,7 +3550,7 @@ function Learn({
         setIsAddingQuestion(false)
         setFeedback({
           type: 'ok',
-          text: `✅ Question ${editingQuestion ? 'updated' : 'added'} and saved!`,
+          text: `✅ Question ${editingQuestion ? 'updated' : 'added to Question Bank'}!`,
         })
       } else {
         setFeedback({ type: 'err', text: res.error })
@@ -2745,15 +3559,13 @@ function Learn({
   }
 
   const handleDeleteQuestion = (questionId: string) => {
+    if (!isAdmin) return
     startTransition(async () => {
       const res = await adminDeleteBrainBitesQuestionAction(questionId)
       if (res.ok) {
         setBrainData(res.data)
         setConfirmDeleteQId(null)
-        if (index >= res.data.questions.length) {
-          setIndex(Math.max(0, res.data.questions.length - 1))
-        }
-        setFeedback({ type: 'ok', text: '🗑️ Quiz question deleted.' })
+        setFeedback({ type: 'ok', text: '🗑️ Question removed from the Question Bank.' })
       } else {
         setFeedback({ type: 'err', text: res.error })
       }
@@ -2762,6 +3574,7 @@ function Learn({
 
   const handleSaveExtras = (e: React.FormEvent) => {
     e.preventDefault()
+    if (!isAdmin) return
     startTransition(async () => {
       const res = await adminUpdateBrainBitesExtrasAction({
         miniChallenge: {
@@ -2784,70 +3597,67 @@ function Learn({
     })
   }
 
-  const activeQuestions: BrainBitesQuestion[] =
-    brainData.questions.length > 0
-      ? brainData.questions
-      : questions.map((item, idx) => ({ id: `fallback_${idx}`, ...item }))
-  const q = activeQuestions[index] || activeQuestions[0]
-
-  const choose = (choice: number) => {
-    if (answer !== null) return
-    setAnswer(choice)
-    if (choice === q.answer) setScore((s) => s + 1)
-  }
-
-  const next = () => {
-    if (index >= activeQuestions.length - 1) setFinished(true)
-    else {
-      setIndex((i) => i + 1)
-      setAnswer(null)
-    }
-  }
-
-  const restart = () => {
-    setIndex(0)
-    setAnswer(null)
-    setScore(0)
-    setFinished(false)
-  }
+  const filteredBankQuestions = brainData.questions.filter((item) => {
+    if (adminBankFilter === 'all') return true
+    return inferQuestionCategory(item) === adminBankFilter
+  })
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      {/* Admin Mode Management Bar */}
+      {/* STRICTLY ADMIN-ONLY: Question Bank & Manipulation Control Panel */}
       {isAdmin && (
         <div className="rounded-[28px] border-2 border-[#173C4A] bg-[#FFFDEB] p-5 shadow-xs">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-full bg-[#173C4A] px-3 py-0.5 text-xs font-black uppercase text-white">
-                  👑 Admin Mode
+                  👑 Admin Only
                 </span>
-                <span className="text-xs font-extrabold text-[#5B6B5E]">
-                  Bananini&apos;s Brain Bites Manager
+                <span className="rounded-full bg-[#EAF7DE] px-2.5 py-0.5 text-xs font-black text-[#287A52]">
+                  {brainData.questions.length} Questions in Bank • {DAILY_QUIZ_LIMIT}/Day Limit
                 </span>
               </div>
-              <p className="mt-1 text-sm font-black text-[#173C4A]">
-                Manage quiz questions, answers, and sidebar widgets right inside this page.
+              <p className="mt-1.5 text-sm font-black text-[#173C4A]">
+                Question Bank &amp; Daily 15 Quiz Manager (Hidden from Regular Users)
+              </p>
+              <p className="text-xs font-semibold text-[#5E6E64]">
+                Only administrators can add, edit, delete, or generate questions. Explorers receive 15 questions per day that refresh at midnight.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setManageOpen(!manageOpen)}
-                className={`rounded-2xl px-4 py-2.5 text-xs font-black transition ${
+                className={`rounded-2xl px-3.5 py-2 text-xs font-black transition ${
                   manageOpen
                     ? 'bg-[#173C4A] text-white shadow-xs'
                     : 'border border-[#D5E3DB] bg-white text-[#173C4A] hover:bg-[#F2F6F3]'
                 }`}
               >
-                {manageOpen ? '✕ Close Manager' : '⚙️ Manage Brain Bites'}
+                {manageOpen ? '✕ Close Bank' : `⚙️ Question Bank (${brainData.questions.length})`}
               </button>
               <button
                 type="button"
                 onClick={openNewQuestionModal}
-                className="flex items-center gap-1.5 rounded-2xl bg-[#287A52] px-4 py-2.5 text-xs font-black text-white shadow-xs hover:bg-[#1E6240]"
+                className="rounded-2xl bg-[#287A52] px-3.5 py-2 text-xs font-black text-white shadow-xs hover:bg-[#1E6240]"
               >
                 ➕ Add Question
+              </button>
+              <button
+                type="button"
+                disabled={generatingAiQ}
+                onClick={handleAdminGenerateAiQuestionToBank}
+                className="rounded-2xl border border-[#287A52] bg-white px-3.5 py-2 text-xs font-black text-[#287A52] hover:bg-[#EAF7DE] disabled:opacity-50"
+              >
+                {generatingAiQ ? '🌀 AI Generating...' : '✨ +1 AI Question'}
+              </button>
+              <button
+                type="button"
+                onClick={handleAdminResetDailyQuiz}
+                className="rounded-2xl border border-[#E0C77B] bg-[#FFF4C2] px-3 py-2 text-xs font-black text-[#5C440E] hover:bg-[#FFE999]"
+                title="Admin-only button to test/reset today's 15 questions"
+              >
+                🔄 Reset Today&apos;s 15
               </button>
             </div>
           </div>
@@ -2867,87 +3677,116 @@ function Learn({
             </div>
           )}
 
-          {/* Expandable Brain Bites Admin Manager */}
+          {/* Expandable Admin Question Bank Manager */}
           {manageOpen && (
             <div className="mt-5 space-y-6 border-t border-[#E8E6CE] pt-5">
-              {/* Question List */}
               <div>
-                <h4 className="text-xs font-black uppercase tracking-wider text-[#637064]">
-                  Active Quiz Questions ({brainData.questions.length})
-                </h4>
-                <div className="mt-3 space-y-2.5">
-                  {brainData.questions.map((item, qIdx) => (
-                    <div
-                      key={item.id || qIdx}
-                      className="flex flex-col justify-between gap-3 rounded-2xl border border-[#DFE8E2] bg-white p-4 sm:flex-row sm:items-center"
-                    >
-                      <div className="space-y-1">
-                        <p className="text-sm font-black text-[#173C4A]">
-                          <span className="mr-2 text-xs text-[#287A52]">Q{qIdx + 1}.</span>
-                          {item.q}
-                        </p>
-                        <div className="flex flex-wrap gap-2 text-xs font-bold">
-                          {item.options.map((opt, optIdx) => (
-                            <span
-                              key={optIdx}
-                              className={`rounded-md px-2 py-0.5 text-[11px] ${
-                                optIdx === item.answer
-                                  ? 'bg-[#E8F4DF] font-black text-[#1E6939]'
-                                  : 'bg-[#F2F5F2] text-[#6B7B70]'
-                              }`}
-                            >
-                              {optIdx === item.answer && '✓ '} {opt}
-                            </span>
-                          ))}
-                        </div>
-                        {item.note && (
-                          <p className="text-[11px] font-semibold text-[#66786D]">
-                            💡 <span className="font-bold">Bananini&apos;s Note:</span> {item.note}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 self-end sm:self-center">
+                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-[#637064]">
+                    Master Question Bank ({filteredBankQuestions.length} shown)
+                  </h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(['all', 'fruit', 'vegetable', 'grain', 'protein', 'dairy', 'habits'] as const).map(
+                      (cat) => (
                         <button
+                          key={cat}
                           type="button"
-                          onClick={() => openEditQuestionModal(item)}
-                          className="rounded-xl border border-[#D5E3DB] bg-[#F9FBFA] px-3 py-1.5 text-xs font-black text-[#173C4A] hover:bg-[#EEF3F0]"
+                          onClick={() => setAdminBankFilter(cat)}
+                          className={`rounded-lg px-2.5 py-1 text-[11px] font-black capitalize ${
+                            adminBankFilter === cat
+                              ? 'bg-[#173C4A] text-white'
+                              : 'bg-white text-[#54665B] border border-[#DCE5DF]'
+                          }`}
                         >
-                          ✏️ Edit
+                          {cat === 'all' ? 'All Topics' : categoryMeta[cat]?.label || cat}
                         </button>
-                        {confirmDeleteQId === item.id ? (
-                          <div className="flex items-center gap-1 rounded-xl bg-[#FDF1EF] px-2 py-1">
-                            <button
-                              type="button"
-                              disabled={isPending}
-                              onClick={() => handleDeleteQuestion(item.id)}
-                              className="rounded-lg bg-[#C93B2B] px-2 py-1 text-[11px] font-black text-white"
+                      )
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3 max-h-96 space-y-2.5 overflow-y-auto pr-1">
+                  {filteredBankQuestions.map((item, qIdx) => {
+                    const cat = categoryMeta[inferQuestionCategory(item)] || categoryMeta.habits
+                    return (
+                      <div
+                        key={item.id || qIdx}
+                        className="flex flex-col justify-between gap-3 rounded-2xl border border-[#DFE8E2] bg-white p-4 sm:flex-row sm:items-center"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className="rounded-md px-2 py-0.5 text-[10px] font-black"
+                              style={{ backgroundColor: cat.badgeBg, color: cat.badgeText }}
                             >
-                              Confirm
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteQId(null)}
-                              className="px-1.5 text-[11px] font-bold text-[#5E6E64]"
-                            >
-                              Cancel
-                            </button>
+                              {cat.emoji} {cat.label}
+                            </span>
+                            <span className="text-xs font-black text-[#287A52]">#{qIdx + 1}</span>
                           </div>
-                        ) : (
+                          <p className="text-sm font-black text-[#173C4A]">{item.q}</p>
+                          <div className="flex flex-wrap gap-2 text-xs font-bold">
+                            {item.options.map((opt, optIdx) => (
+                              <span
+                                key={optIdx}
+                                className={`rounded-md px-2 py-0.5 text-[11px] ${
+                                  optIdx === item.answer
+                                    ? 'bg-[#E8F4DF] font-black text-[#1E6939]'
+                                    : 'bg-[#F2F5F2] text-[#6B7B70]'
+                                }`}
+                              >
+                                {optIdx === item.answer && '✓ '} {opt}
+                              </span>
+                            ))}
+                          </div>
+                          {item.note && (
+                            <p className="text-[11px] font-semibold text-[#66786D]">
+                              💡 <span className="font-bold">Bananini&apos;s Note:</span> {item.note}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2 self-end sm:self-center">
                           <button
                             type="button"
-                            onClick={() => setConfirmDeleteQId(item.id)}
-                            className="rounded-xl bg-[#FBEAE7] px-3 py-1.5 text-xs font-black text-[#B03E31] hover:bg-[#F6D3CD]"
+                            onClick={() => openEditQuestionModal(item)}
+                            className="rounded-xl border border-[#D5E3DB] bg-[#F9FBFA] px-3 py-1.5 text-xs font-black text-[#173C4A] hover:bg-[#EEF3F0]"
                           >
-                            🗑️ Delete
+                            ✏️ Edit
                           </button>
-                        )}
+                          {confirmDeleteQId === item.id ? (
+                            <div className="flex items-center gap-1 rounded-xl bg-[#FDF1EF] px-2 py-1">
+                              <button
+                                type="button"
+                                disabled={isPending}
+                                onClick={() => handleDeleteQuestion(item.id)}
+                                className="rounded-lg bg-[#C93B2B] px-2 py-1 text-[11px] font-black text-white"
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteQId(null)}
+                                className="px-1.5 text-[11px] font-bold text-[#5E6E64]"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteQId(item.id)}
+                              className="rounded-xl bg-[#FBEAE7] px-3 py-1.5 text-xs font-black text-[#B03E31] hover:bg-[#F6D3CD]"
+                            >
+                              🗑️ Delete
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
 
-              {/* Sidebar Challenge & Fun Fact Editor */}
+              {/* Admin Sidebar Challenge & Fun Fact Editor */}
               <form
                 onSubmit={handleSaveExtras}
                 className="rounded-2xl border border-[#E3ECE6] bg-white p-5"
@@ -2955,10 +3794,10 @@ function Learn({
                 <div className="flex items-center justify-between border-b border-[#EEF3F0] pb-3">
                   <div>
                     <h4 className="text-sm font-black text-[#173C4A]">
-                      Edit Mini Challenge &amp; Did You Know?
+                      Edit Daily Mini Challenge &amp; Did You Know?
                     </h4>
                     <p className="text-xs font-semibold text-[#7D8C81]">
-                      Changes are saved to the cloud and display immediately below.
+                      Updates the sidebar cards for all explorers immediately.
                     </p>
                   </div>
                   <button
@@ -3018,155 +3857,258 @@ function Learn({
         </div>
       )}
 
-      {/* Main Quiz & Sidebar View */}
+      {/* Header + Daily 15 Refresh Status */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="text-xs font-extrabold uppercase tracking-[.18em] text-[#7A897F]">
-            Learn &amp; play
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-extrabold uppercase tracking-[.18em] text-[#7A897F]">
+              Learn &amp; play
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EAF7DE] px-3 py-1 text-[11px] font-black text-[#287A52]">
+              📅 Daily 15 Questions • Refreshes in {refreshCountdown}
+            </span>
+          </div>
           <h1 className="mt-2 text-4xl font-black tracking-[-.04em] sm:text-5xl">
             Bananini&apos;s brain bites
           </h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            disabled={generatingAiQ}
-            onClick={() => handleAddBonusAiQuestion()}
-            className="inline-flex items-center gap-1.5 rounded-full border-2 border-[#287A52] bg-white px-4 py-2 text-xs font-black text-[#287A52] shadow-2xs transition hover:bg-[#EAF7DE] disabled:opacity-50"
-          >
-            <span>{generatingAiQ ? '🌀 Creating...' : '✨ New AI Question'}</span>
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {combo >= 2 && !finished && (
+            <span className="inline-flex animate-pulse items-center gap-1 rounded-full bg-[#FFE2C6] px-3.5 py-2 text-xs font-black text-[#B34712]">
+              🔥 {combo}x Combo Streak!
+            </span>
+          )}
           <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FFF0B5] px-4 py-2 text-sm font-extrabold text-[#3D2A1E]">
-            <Icon name="star" size={16} /> {score * 10} quiz pts
+            <Icon name="star" size={16} /> {learnProfile.totalXp} Learning XP
           </span>
         </div>
       </div>
 
-      {!isAdmin && feedback && (
-        <div className="flex items-center justify-between rounded-2xl border border-[#BCE3C8] bg-[#EAF8EE] px-4 py-3 text-xs font-black text-[#1E6939]">
-          <span>{feedback.text}</span>
-          <button onClick={() => setFeedback(null)} className="underline">
-            Dismiss
-          </button>
-        </div>
-      )}
+      {/* PROGRESS LEARNING DASHBOARD BANNER */}
+      <section className="rounded-[28px] border border-[#DCE6DF] bg-gradient-to-r from-[#F4FAF5] via-[#FFFDF2] to-[#F1F8F4] p-5 shadow-2xs sm:p-6">
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div className="flex items-center gap-4">
+            <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-white text-3xl shadow-xs border border-[#E2ECE5]">
+              {currentRank.icon}
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-[#173C4A] px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">
+                  Level {currentRank.level}
+                </span>
+                <span className="text-xs font-extrabold text-[#287A52]">
+                  {learnProfile.totalXp} / {currentRank.nextXp} XP
+                </span>
+              </div>
+              <h2 className="mt-0.5 text-xl font-black text-[#173C4A]">{currentRank.title}</h2>
+              <div className="mt-2 h-2.5 w-52 max-w-full overflow-hidden rounded-full bg-[#DCE6DF] sm:w-64">
+                <div
+                  className="h-full rounded-full bg-[#287A52] transition-all duration-500"
+                  style={{ width: `${levelProgressPct}%` }}
+                />
+              </div>
+              <p className="mt-1 text-[11px] font-bold text-[#66786D]">
+                {Math.max(0, currentRank.nextXp - learnProfile.totalXp)} XP until next rank!
+              </p>
+            </div>
+          </div>
 
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <div className="rounded-2xl border border-[#E2ECE5] bg-white px-3.5 py-2.5 text-center">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#6E7E73]">
+                Today&apos;s Daily 15
+              </p>
+              <p className="mt-0.5 text-lg font-black text-[#173C4A]">
+                {finished ? DAILY_QUIZ_LIMIT : answeredRecords.length} / {DAILY_QUIZ_LIMIT}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[#E2ECE5] bg-white px-3.5 py-2.5 text-center">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#6E7E73]">
+                Today&apos;s Score
+              </p>
+              <p className="mt-0.5 text-lg font-black text-[#287A52]">
+                {score} / {DAILY_QUIZ_LIMIT}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[#E2ECE5] bg-white px-3.5 py-2.5 text-center">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#6E7E73]">
+                Best Combo
+              </p>
+              <p className="mt-0.5 text-lg font-black text-[#D97724]">🔥 {bestCombo}x</p>
+            </div>
+            <div className="rounded-2xl border border-[#E2ECE5] bg-white px-3.5 py-2.5 text-center">
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#6E7E73]">
+                Hero Cards
+              </p>
+              <p className="mt-0.5 text-lg font-black text-[#173C4A]">
+                🃏 {unlockedCardsCount} / {SUPERFOOD_COLLECTIBLE_CARDS.length}
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Main Daily 15 Quiz & Sidebar View */}
       <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_300px]">
         <section className="rounded-[32px] border border-[#E0E5DB] bg-white p-6 shadow-xs sm:p-9">
           {finished ? (
-            <div className="py-6 text-center">
+            <div className="py-4 text-center">
               <div className="mx-auto w-fit rounded-full bg-[#E4F1D5] p-2">
                 <Bananini small />
               </div>
-              <span className="mt-4 inline-block rounded-full bg-[#FFF0B5] px-3.5 py-1 text-xs font-black uppercase tracking-wider text-[#5A4310]">
-                {score === activeQuestions.length
-                  ? '🏆 Superfood Genius!'
-                  : score >= Math.ceil(activeQuestions.length / 2)
-                    ? '🌟 Rainbow Nutritionist!'
-                    : '🌱 Curious Food Sprout!'}
+              <span className="mt-3 inline-block rounded-full bg-[#FFF0B5] px-4 py-1 text-xs font-black uppercase tracking-wider text-[#5A4310]">
+                {score >= 13
+                  ? '🏆 Daily Superfood Genius!'
+                  : score >= 9
+                    ? '🌟 Rainbow Nutrition Star!'
+                    : '🌱 Curious Food Explorer!'}
               </span>
-              <h2 className="mt-3 text-4xl font-black text-[#173C4A]">
-                You got {score} of {activeQuestions.length}!
+              <h2 className="mt-3 text-3xl font-black text-[#173C4A] sm:text-4xl">
+                Daily 15 Complete: {score} / {DAILY_QUIZ_LIMIT}!
               </h2>
               <p className="mx-auto mt-2 max-w-md text-sm font-semibold text-[#6E7C72]">
-                {score === activeQuestions.length
-                  ? 'Amazing! You answered every nutrition question correctly!'
-                  : 'Great exploring! Every question helps your food-smarts grow stronger.'}
+                You earned <span className="font-black text-[#287A52]">+{xpEarnedToday} Learning XP</span> today with a best streak of <span className="font-black text-[#D97724]">{bestCombo}x</span>!
               </p>
 
-              {/* Quick Answer Takeaways */}
-              <div className="mt-6 max-h-56 space-y-2 overflow-y-auto rounded-2xl bg-[#F7FAF7] p-4 text-left">
-                <p className="text-[11px] font-black uppercase tracking-wider text-[#64756A]">
-                  What You Learned Today:
-                </p>
-                {activeQuestions.map((item, idx) => (
-                  <div
-                    key={item.id || idx}
-                    className="rounded-xl border border-[#E2ECE5] bg-white p-3 text-xs"
-                  >
-                    <p className="font-black text-[#173C4A]">
-                      {idx + 1}. {item.q}
-                    </p>
-                    <p className="mt-0.5 font-extrabold text-[#287A52]">
-                      ✓ {item.options[item.answer]}
-                    </p>
-                    {item.note && (
-                      <p className="mt-0.5 font-semibold text-[#68776D]">{item.note}</p>
-                    )}
-                  </div>
-                ))}
+              {/* Daily Refresh Countdown Box */}
+              <div className="mx-auto mt-4 inline-flex items-center gap-2 rounded-2xl border border-[#CDE6D4] bg-[#F2FAF4] px-4 py-2.5 text-xs font-black text-[#1E6939]">
+                <span>⏰ Next 15 Daily Questions unlock tomorrow in {refreshCountdown}</span>
               </div>
 
-              <div className="mt-7 flex flex-wrap justify-center gap-3">
-                <Button onClick={restart}>
-                  Play again
-                  <Icon name="arrow" />
-                </Button>
+              {/* Scrollable Review of Today's 15 Questions */}
+              <div className="mt-6 max-h-64 space-y-2 overflow-y-auto rounded-2xl bg-[#F7FAF7] p-4 text-left">
+                <p className="text-[11px] font-black uppercase tracking-wider text-[#64756A]">
+                  Today&apos;s 15 Brain Bites Review:
+                </p>
+                {dailyQuestions.map((item, idx) => {
+                  const rec = answeredRecords[idx]
+                  return (
+                    <div
+                      key={item.id || idx}
+                      className="rounded-xl border border-[#E2ECE5] bg-white p-3 text-xs"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-black text-[#173C4A]">
+                          {idx + 1}. {item.q}
+                        </p>
+                        {rec && (
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${
+                              rec.correct
+                                ? 'bg-[#E8F4DF] text-[#1E6939]'
+                                : 'bg-[#FAE5E1] text-[#8A3E36]'
+                            }`}
+                          >
+                            {rec.correct ? '✓ Correct' : 'Learned'}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 font-extrabold text-[#287A52]">
+                        ✓ Answer: {item.options[item.answer]}
+                      </p>
+                      {item.note && (
+                        <p className="mt-0.5 font-semibold text-[#68776D]">{item.note}</p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="mt-6 flex flex-wrap justify-center gap-3">
                 <Button
                   tone="white"
-                  disabled={generatingAiQ}
-                  onClick={() => handleAddBonusAiQuestion()}
+                  onClick={() => setActiveLearnTab('cards')}
                 >
-                  {generatingAiQ ? '🌀 Generating...' : '✨ Add AI Bonus Question'}
+                  🃏 View Unlocked Hero Cards ({unlockedCardsCount}/{SUPERFOOD_COLLECTIBLE_CARDS.length})
                 </Button>
                 {onScanFood && (
                   <Button tone="yellow" onClick={onScanFood}>
                     <Icon name="scan" />
-                    Scan a Food
+                    Scan a Food for Points
                   </Button>
                 )}
               </div>
             </div>
           ) : (
             <>
-              <div className="flex items-center justify-between text-xs font-extrabold text-[#5E6E64]">
-                <span>
-                  QUESTION {index + 1} OF {activeQuestions.length}
-                </span>
-                <span>{Math.round(((index + 1) / activeQuestions.length) * 100)}%</span>
-              </div>
-
-              {/* Question Progress Pills */}
-              <div className="mt-2.5 flex gap-1.5">
-                {activeQuestions.map((item, dotIdx) => (
-                  <button
-                    key={item.id || dotIdx}
-                    type="button"
-                    onClick={() => {
-                      setIndex(dotIdx)
-                      setAnswer(null)
+              {/* Question Header: Counter + Topic Badge + Hint Lifeline */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-[#5E6E64]">
+                    DAILY QUESTION {index + 1} OF {DAILY_QUIZ_LIMIT}
+                  </span>
+                  <span
+                    className="rounded-full px-2.5 py-0.5 text-[11px] font-black"
+                    style={{
+                      backgroundColor: currentQCat.badgeBg,
+                      color: currentQCat.badgeText,
                     }}
-                    className={`h-2.5 flex-1 rounded-full transition-all ${
-                      dotIdx === index
-                        ? 'bg-[#E9B833]'
-                        : dotIdx < index
-                          ? 'bg-[#58A36D]'
-                          : 'bg-[#EBEFE7]'
-                    }`}
-                    title={`Jump to Question ${dotIdx + 1}`}
-                  />
-                ))}
+                  >
+                    {currentQCat.emoji} {currentQCat.label}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={answer !== null || hintsLeft <= 0 || eliminatedOption !== null}
+                  onClick={handleUseBananiniHint}
+                  className="inline-flex items-center gap-1 rounded-full border border-[#E6D48F] bg-[#FFF8DB] px-3 py-1 text-xs font-black text-[#614811] transition hover:bg-[#FFEEAD] disabled:opacity-45"
+                  title="Eliminate 1 wrong option"
+                >
+                  🍌 50/50 Hint ({hintsLeft} left today)
+                </button>
               </div>
 
-              <h2 className="mt-7 text-2xl font-black leading-tight text-[#173C4A] sm:text-3xl">
+              {/* Non-manipulable 15-Question Daily Progress Bar */}
+              <div className="mt-3 flex gap-1">
+                {dailyQuestions.map((item, dotIdx) => {
+                  const rec = answeredRecords[dotIdx]
+                  let barColor = 'bg-[#EBEFE7]'
+                  if (dotIdx === index) barColor = 'bg-[#E9B833]'
+                  else if (rec?.correct) barColor = 'bg-[#58A36D]'
+                  else if (rec && !rec.correct) barColor = 'bg-[#E5989B]'
+                  else if (dotIdx < index) barColor = 'bg-[#58A36D]'
+
+                  return (
+                    <div
+                      key={item.id || dotIdx}
+                      className={`h-2.5 flex-1 rounded-full transition-all ${barColor}`}
+                      title={`Question ${dotIdx + 1} of ${DAILY_QUIZ_LIMIT}`}
+                    />
+                  )
+                })}
+              </div>
+
+              <h2 className="mt-6 text-2xl font-black leading-tight text-[#173C4A] sm:text-3xl">
                 {q.q}
               </h2>
-              <div className="mt-6 space-y-3">
+
+              {eliminatedOption !== null && answer === null && (
+                <p className="mt-2 rounded-xl bg-[#FFF8DB] px-3 py-1.5 text-xs font-bold text-[#6B5014]">
+                  🍌 <span className="font-black">Bananini Whisper:</span> I crossed out Option{' '}
+                  {String.fromCharCode(65 + eliminatedOption)} for you! Pick between the remaining two!
+                </p>
+              )}
+
+              <div className="mt-5 space-y-3">
                 {q.options.map((option, i) => {
+                  const isEliminated = eliminatedOption === i && answer === null
                   const selected = answer === i
                   const correct = answer !== null && i === q.answer
                   return (
                     <button
                       key={`${q.id}-${i}`}
                       type="button"
+                      disabled={isEliminated || answer !== null}
                       onClick={() => choose(i)}
                       className={`flex w-full items-center gap-4 rounded-2xl border-2 p-4 text-left font-extrabold transition ${
-                        correct
-                          ? 'border-[#58A36D] bg-[#E8F4DF] text-[#173C4A]'
-                          : selected
-                            ? 'border-[#D46F6F] bg-[#FAE5E1] text-[#6E2626]'
-                            : 'border-[#E4E8E1] hover:border-[#A5BDAA]'
+                        isEliminated
+                          ? 'border-dashed border-gray-200 bg-gray-50 text-gray-300 line-through opacity-50 cursor-not-allowed'
+                          : correct
+                            ? 'border-[#58A36D] bg-[#E8F4DF] text-[#173C4A]'
+                            : selected
+                              ? 'border-[#D46F6F] bg-[#FAE5E1] text-[#6E2626]'
+                              : 'border-[#E4E8E1] hover:border-[#A5BDAA]'
                       }`}
                     >
                       <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-sm font-black shadow-2xs">
@@ -3182,12 +4124,25 @@ function Learn({
                   )
                 })}
               </div>
+
               {answer !== null && (
                 <div className="mt-6 flex flex-col justify-between gap-3 rounded-2xl bg-[#F3F6EE] p-4 sm:flex-row sm:items-center">
                   <div>
-                    <p className="font-black text-[#173C4A]">
-                      {answer === q.answer ? '🎉 Great thinking!' : '💡 Good try!'}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-black text-[#173C4A]">
+                        {answer === q.answer ? '🎉 Awesome job!' : '💡 Great learning moment!'}
+                      </p>
+                      {lastXpGain && (
+                        <span className="rounded-full bg-[#287A52] px-2.5 py-0.5 text-[11px] font-black text-white">
+                          +{lastXpGain} Learning XP
+                        </span>
+                      )}
+                      {combo >= 2 && answer === q.answer && (
+                        <span className="rounded-full bg-[#FFE2C6] px-2.5 py-0.5 text-[11px] font-black text-[#B34712]">
+                          🔥 {combo}x Streak Bonus!
+                        </span>
+                      )}
+                    </div>
                     <p className="mt-1 text-sm font-semibold text-[#5C6B60]">{q.note}</p>
                   </div>
                   {onAskBananini && (
@@ -3205,20 +4160,13 @@ function Learn({
                   )}
                 </div>
               )}
+
               <div className="mt-6 flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  disabled={index === 0}
-                  onClick={() => {
-                    setIndex((i) => Math.max(0, i - 1))
-                    setAnswer(null)
-                  }}
-                  className="rounded-xl border border-[#DCE4DD] px-3.5 py-2 text-xs font-black text-[#5A6B60] hover:bg-[#F3F7F4] disabled:opacity-35"
-                >
-                  ← Previous
-                </button>
+                <span className="text-xs font-bold text-[#7A897F]">
+                  {DAILY_QUIZ_LIMIT - (index + 1)} questions remaining today
+                </span>
                 <Button onClick={next} disabled={answer === null}>
-                  {index === activeQuestions.length - 1 ? 'See my score' : 'Next bite'}
+                  {index === dailyQuestions.length - 1 ? 'Finish Daily 15 🏆' : 'Next Question'}
                   <Icon name="arrow" />
                 </Button>
               </div>
@@ -3236,7 +4184,7 @@ function Learn({
               </span>
               {checkedColors.length >= 3 && (
                 <span className="rounded-full bg-[#287A52] px-3 py-1 text-[11px] font-black text-white">
-                  🏆 Quest Done!
+                  🏆 +15 XP Quest Done!
                 </span>
               )}
             </div>
@@ -3349,108 +4297,285 @@ function Learn({
         </aside>
       </div>
 
-      {/* Interactive 6 Food Group Superpowers Explorer */}
+      {/* INTERACTIVE PROGRESS LEARNING HUB: Mastery Map, Collectible Hero Cards & Superpowers Guide */}
       <section className="rounded-[32px] border border-[#E0E5DB] bg-white p-6 shadow-xs sm:p-8">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+        <div className="flex flex-col justify-between gap-4 border-b border-[#EEF3EF] pb-5 sm:flex-row sm:items-center">
           <div>
             <span className="rounded-full bg-[#EAF7DE] px-3 py-1 text-[11px] font-black uppercase tracking-wider text-[#287A52]">
-              🌈 Interactive Nutrition Guide
+              🚀 Interactive Progress Learning
             </span>
             <h2 className="mt-2 text-2xl font-black text-[#173C4A]">
-              Explore Food Group Superpowers
+              Your Nutrition Adventure &amp; Mastery
             </h2>
             <p className="text-xs font-semibold text-[#6D7C72]">
-              Tap any food group below to discover how it powers up your body and brain!
+              Level up all 6 food kingdoms, study secret flashcards for bonus XP, and unlock Superfood Hero Cards!
             </p>
           </div>
-        </div>
 
-        {/* Food Group Selector Tabs */}
-        <div className="mt-5 flex flex-wrap gap-2">
-          {foodGuideGroups.map((g) => (
+          <div className="flex flex-wrap gap-2">
             <button
-              key={g.id}
               type="button"
-              onClick={() => setActiveGuideGroup(g.id)}
-              className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-black transition ${
-                activeGuideGroup === g.id
+              onClick={() => setActiveLearnTab('mastery')}
+              className={`rounded-2xl px-4 py-2.5 text-xs font-black transition ${
+                activeLearnTab === 'mastery'
                   ? 'bg-[#173C4A] text-white shadow-xs'
-                  : 'bg-[#F4F7F4] text-[#32473B] hover:bg-[#E7EFE9]'
+                  : 'bg-[#F3F7F4] text-[#32473B] hover:bg-[#E6EFE9]'
               }`}
             >
-              <span className="text-base">{g.emoji}</span>
-              <span>{g.name}</span>
+              🗺️ Mastery Map
             </button>
-          ))}
-        </div>
-
-        {/* Selected Food Group Detail Card */}
-        <div
-          className="mt-5 rounded-[24px] p-5 sm:p-6 transition-colors"
-          style={{ backgroundColor: currentGuide.color }}
-        >
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-            <div className="space-y-2 max-w-2xl">
-              <div className="inline-flex items-center gap-2 rounded-full bg-white/85 px-3 py-1 text-xs font-black text-[#173C4A]">
-                <span>{currentGuide.emoji}</span>
-                <span>Superpower: {currentGuide.power}</span>
-              </div>
-              <h3 className="text-2xl font-black text-[#173C4A]">{currentGuide.name}</h3>
-              <p className="text-sm font-semibold leading-relaxed text-[#2D4238]">
-                {currentGuide.summary}
-              </p>
-              <p className="text-xs font-bold text-[#495E53]">
-                🍽️ <span className="font-black">Tasty Examples:</span> {currentGuide.examples}
-              </p>
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {currentGuide.vitamins.map((vit) => (
-                  <span
-                    key={vit}
-                    className="rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-black text-[#173C4A] shadow-2xs"
-                  >
-                    ✨ {vit}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="flex flex-wrap sm:flex-col gap-2 shrink-0">
-              <button
-                type="button"
-                disabled={generatingAiQ}
-                onClick={() => handleAddBonusAiQuestion(currentGuide.name)}
-                className="rounded-xl bg-[#173C4A] px-4 py-2.5 text-xs font-black text-white shadow-xs transition hover:bg-[#245263] disabled:opacity-50"
-              >
-                {generatingAiQ ? '🌀 Creating Quiz...' : `🎯 Quiz Me on ${currentGuide.name}`}
-              </button>
-              {onAskBananini && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    onAskBananini(
-                      `Hi Bananini! Can you tell me fun facts and snack ideas for ${currentGuide.name} (${currentGuide.examples})?`
-                    )
-                  }
-                  className="rounded-xl bg-white px-4 py-2.5 text-xs font-black text-[#173C4A] shadow-xs transition hover:bg-[#F7FAF8]"
-                >
-                  💬 Ask Bananini
-                </button>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={() => setActiveLearnTab('cards')}
+              className={`rounded-2xl px-4 py-2.5 text-xs font-black transition ${
+                activeLearnTab === 'cards'
+                  ? 'bg-[#173C4A] text-white shadow-xs'
+                  : 'bg-[#F3F7F4] text-[#32473B] hover:bg-[#E6EFE9]'
+              }`}
+            >
+              🃏 Hero Cards ({unlockedCardsCount}/{SUPERFOOD_COLLECTIBLE_CARDS.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveLearnTab('guide')}
+              className={`rounded-2xl px-4 py-2.5 text-xs font-black transition ${
+                activeLearnTab === 'guide'
+                  ? 'bg-[#173C4A] text-white shadow-xs'
+                  : 'bg-[#F3F7F4] text-[#32473B] hover:bg-[#E6EFE9]'
+              }`}
+            >
+              🌈 Food Guide
+            </button>
           </div>
         </div>
+
+        {/* TAB 1: 6-KINGDOM NUTRITION MASTERY PROGRESS MAP */}
+        {activeLearnTab === 'mastery' && (
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {foodGuideGroups.map((group) => {
+              const meta = categoryMeta[group.id] || categoryMeta.habits
+              const pct = Math.min(100, learnProfile.masteryByCategory[group.id] || 10)
+              const studiedToday = learnProfile.studiedCards.includes(`${todayKey}_${group.id}`)
+              return (
+                <div
+                  key={group.id}
+                  className="flex flex-col justify-between rounded-2xl border border-[#E3ECE6] bg-[#FAFDFB] p-4 shadow-2xs"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-xs font-black"
+                        style={{ backgroundColor: meta.badgeBg, color: meta.badgeText }}
+                      >
+                        <span>{group.emoji}</span>
+                        <span>{group.name}</span>
+                      </span>
+                      <span className="text-xs font-black text-[#173C4A]">{pct}% Mastered</span>
+                    </div>
+                    <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-[#E6EFE9]">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%`, backgroundColor: meta.barColor }}
+                      />
+                    </div>
+                    <p className="mt-2.5 text-xs font-bold text-[#2F4438]">
+                      ⚡ <span className="font-black">Power:</span> {group.power}
+                    </p>
+                    <p className="mt-1 text-[11px] font-semibold leading-relaxed text-[#64756A]">
+                      💡 {group.flashcardSecret}
+                    </p>
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between border-t border-[#EDF3EF] pt-3">
+                    <button
+                      type="button"
+                      disabled={studiedToday}
+                      onClick={() => handleStudyFlashcard(group.id)}
+                      className={`rounded-xl px-3 py-1.5 text-[11px] font-black transition ${
+                        studiedToday
+                          ? 'bg-[#E8F4DF] text-[#1E6939]'
+                          : 'bg-[#173C4A] text-white hover:bg-[#245263]'
+                      }`}
+                    >
+                      {studiedToday ? '✓ Studied Today (+10 XP)' : '📖 Study Flashcard (+10 XP)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveGuideGroup(group.id)
+                        setActiveLearnTab('guide')
+                      }}
+                      className="text-[11px] font-black text-[#287A52] hover:underline"
+                    >
+                      Explore →
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* TAB 2: COLLECTIBLE SUPERFOOD HERO CARDS */}
+        {activeLearnTab === 'cards' && (
+          <div className="mt-6">
+            <p className="mb-4 text-xs font-bold text-[#5E6E64]">
+              Earn Learning XP from your Daily 15 Questions and Study Flashcards to unlock all 6 Superfood Hero Cards! Tap any unlocked card to inspect its secret trivia.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {SUPERFOOD_COLLECTIBLE_CARDS.map((card) => {
+                const unlocked = learnProfile.totalXp >= card.unlockXp
+                const isSelected = flippedCardId === card.id
+                return (
+                  <button
+                    key={card.id}
+                    type="button"
+                    disabled={!unlocked}
+                    onClick={() => setFlippedCardId(isSelected ? null : card.id)}
+                    className={`group relative flex flex-col justify-between rounded-[24px] border-2 p-5 text-left transition-all ${
+                      unlocked
+                        ? isSelected
+                          ? 'border-[#173C4A] shadow-md scale-[1.01]'
+                          : 'border-[#DCE6DF] hover:border-[#287A52]'
+                        : 'border-dashed border-gray-200 bg-gray-50 opacity-65 cursor-not-allowed'
+                    }`}
+                    style={{ backgroundColor: unlocked ? card.bg : undefined }}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white text-2xl shadow-2xs">
+                          {unlocked ? card.emoji : '🔒'}
+                        </span>
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase ${
+                            unlocked
+                              ? 'bg-[#287A52] text-white'
+                              : 'bg-gray-200 text-gray-600'
+                          }`}
+                        >
+                          {unlocked ? '★ Unlocked' : `Unlock at ${card.unlockXp} XP`}
+                        </span>
+                      </div>
+                      <h3 className="mt-3 text-lg font-black text-[#173C4A]">
+                        {unlocked ? card.name : 'Mystery Superfood Hero'}
+                      </h3>
+                      <p className="text-xs font-extrabold text-[#4A6154]">
+                        {unlocked ? card.role : `Need ${Math.max(0, card.unlockXp - learnProfile.totalXp)} more XP`}
+                      </p>
+                      {unlocked && (
+                        <p className="mt-2 text-xs font-semibold leading-relaxed text-[#2C3E34]">
+                          ⚡ {card.power}
+                        </p>
+                      )}
+                    </div>
+
+                    {unlocked && (
+                      <div className="mt-3 rounded-xl bg-white/85 p-2.5 text-[11px] font-bold text-[#173C4A]">
+                        {isSelected ? (
+                          <span>🔍 Secret Trivia: {card.secret}</span>
+                        ) : (
+                          <span className="text-[#287A52]">Tap to reveal secret trivia →</span>
+                        )}
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: INTERACTIVE 6 FOOD GROUP SUPERPOWERS GUIDE */}
+        {activeLearnTab === 'guide' && (
+          <div className="mt-6">
+            <div className="flex flex-wrap gap-2">
+              {foodGuideGroups.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => setActiveGuideGroup(g.id)}
+                  className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-black transition ${
+                    activeGuideGroup === g.id
+                      ? 'bg-[#173C4A] text-white shadow-xs'
+                      : 'bg-[#F4F7F4] text-[#32473B] hover:bg-[#E7EFE9]'
+                  }`}
+                >
+                  <span className="text-base">{g.emoji}</span>
+                  <span>{g.name}</span>
+                </button>
+              ))}
+            </div>
+
+            <div
+              className="mt-5 rounded-[24px] p-5 sm:p-6 transition-colors"
+              style={{ backgroundColor: currentGuide.color }}
+            >
+              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                <div className="max-w-2xl space-y-2">
+                  <div className="inline-flex items-center gap-2 rounded-full bg-white/85 px-3 py-1 text-xs font-black text-[#173C4A]">
+                    <span>{currentGuide.emoji}</span>
+                    <span>Superpower: {currentGuide.power}</span>
+                  </div>
+                  <h3 className="text-2xl font-black text-[#173C4A]">{currentGuide.name}</h3>
+                  <p className="text-sm font-semibold leading-relaxed text-[#2D4238]">
+                    {currentGuide.summary}
+                  </p>
+                  <p className="text-xs font-bold text-[#495E53]">
+                    🍽️ <span className="font-black">Tasty Examples:</span> {currentGuide.examples}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {currentGuide.vitamins.map((vit) => (
+                      <span
+                        key={vit}
+                        className="rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-black text-[#173C4A] shadow-2xs"
+                      >
+                        ✨ {vit}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col">
+                  <button
+                    type="button"
+                    disabled={learnProfile.studiedCards.includes(`${todayKey}_${currentGuide.id}`)}
+                    onClick={() => handleStudyFlashcard(currentGuide.id)}
+                    className="rounded-xl bg-[#173C4A] px-4 py-2.5 text-xs font-black text-white shadow-xs transition hover:bg-[#245263] disabled:bg-[#287A52]"
+                  >
+                    {learnProfile.studiedCards.includes(`${todayKey}_${currentGuide.id}`)
+                      ? '✓ Studied Today (+10 XP)'
+                      : `📖 Claim +10 XP for ${currentGuide.name}`}
+                  </button>
+                  {onAskBananini && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onAskBananini(
+                          `Hi Bananini! Can you tell me fun facts and snack ideas for ${currentGuide.name} (${currentGuide.examples})?`
+                        )
+                      }
+                      className="rounded-xl bg-white px-4 py-2.5 text-xs font-black text-[#173C4A] shadow-xs transition hover:bg-[#F7FAF8]"
+                    >
+                      💬 Ask Bananini
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
-      {/* Add / Edit Question Modal */}
-      {isAddingQuestion && (
+      {/* STRICTLY ADMIN-ONLY: Add / Edit Question Modal */}
+      {isAdmin && isAddingQuestion && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-xs">
           <div className="w-full max-w-lg rounded-[28px] border border-[#D5E3DB] bg-white p-6 shadow-2xl sm:p-8">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-xl font-black text-[#173C4A]">
-                  {editingQuestion ? 'Edit Brain Bites Question' : 'Add New Brain Bites Question'}
+                  {editingQuestion ? 'Edit Brain Bites Question' : 'Add Question to Bank'}
                 </h3>
                 <p className="mt-1 text-xs font-semibold text-[#6E7E73]">
-                  Kids will see this question immediately inside Bananini&apos;s brain bites.
+                  Admin-only editor: questions added here are stored in the Question Bank for the Daily 15 rotation.
                 </p>
               </div>
               <button
@@ -3464,16 +4589,33 @@ function Learn({
             </div>
 
             <form onSubmit={handleSaveQuestion} className="mt-5 space-y-4">
-              <div>
-                <label className="text-xs font-extrabold text-[#32453A]">Question Title</label>
-                <input
-                  required
-                  type="text"
-                  value={qTitle}
-                  onChange={(e) => setQTitle(e.target.value)}
-                  placeholder="e.g., Which snack gives you long-lasting energy?"
-                  className="mt-1.5 h-11 w-full rounded-xl border border-[#D5E3DB] px-3.5 text-sm font-semibold outline-none focus:border-[#173C4A]"
-                />
+              <div className="grid gap-3 sm:grid-cols-[1fr_160px]">
+                <div>
+                  <label className="text-xs font-extrabold text-[#32453A]">Question Title</label>
+                  <input
+                    required
+                    type="text"
+                    value={qTitle}
+                    onChange={(e) => setQTitle(e.target.value)}
+                    placeholder="e.g., Which snack gives you long-lasting energy?"
+                    className="mt-1.5 h-11 w-full rounded-xl border border-[#D5E3DB] px-3.5 text-sm font-semibold outline-none focus:border-[#173C4A]"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-extrabold text-[#32453A]">Topic Category</label>
+                  <select
+                    value={qCategory}
+                    onChange={(e) => setQCategory(e.target.value)}
+                    className="mt-1.5 h-11 w-full rounded-xl border border-[#D5E3DB] bg-white px-3 text-xs font-bold outline-none focus:border-[#173C4A]"
+                  >
+                    <option value="fruit">🍎 Sweet Fruits</option>
+                    <option value="vegetable">🥦 Crunchy Veggies</option>
+                    <option value="grain">🌾 Whole Grains</option>
+                    <option value="protein">🍗 Mighty Proteins</option>
+                    <option value="dairy">🥛 Dairy &amp; Hydration</option>
+                    <option value="habits">🌈 Rainbow Habits</option>
+                  </select>
+                </div>
               </div>
 
               <div>

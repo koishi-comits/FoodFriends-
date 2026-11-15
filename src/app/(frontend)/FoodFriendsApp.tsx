@@ -859,7 +859,7 @@ function Brand() {
         <Icon name="leaf" />
       </span>
       <span className="text-xl font-black tracking-[-.04em] text-[#224735]">
-        Food<span className="text-[#E89542]">Freinds</span>
+        Food<span className="text-[#E89542]">Friends</span>
       </span>
     </div>
   )
@@ -4518,7 +4518,7 @@ function AuthModal({
           </Button>
         </form>
         <p className="mt-6 text-center text-sm font-semibold text-[#707C74]">
-          {mode === 'login' ? 'New to FoodFreinds?' : 'Already an explorer?'}{' '}
+          {mode === 'login' ? 'New to FoodFriends?' : 'Already an explorer?'}{' '}
           <button
             onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
             className="font-black text-[#287A52]"

@@ -10,7 +10,7 @@ const isOwner: Access = ({ req }) => {
 export const FoodLogs: CollectionConfig = {
   slug: 'food-logs',
   admin: {
-    group: 'FoodFreinds',
+    group: 'FoodFriends',
     useAsTitle: 'foodName',
   },
   access: {

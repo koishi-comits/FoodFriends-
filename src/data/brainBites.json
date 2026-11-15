@@ -20,16 +20,36 @@
       "options": ["Water", "Soda", "Energy drink"],
       "answer": 0,
       "note": "Water hydrates your body and brain so you can run and think fast."
+    },
+    {
+      "id": "q4",
+      "q": "Which nutrient in milk and yogurt helps build strong bones and teeth?",
+      "options": ["Calcium", "Added sugar", "Food coloring"],
+      "answer": 0,
+      "note": "Calcium teams up with Vitamin D to make your bones and teeth super strong!"
+    },
+    {
+      "id": "q5",
+      "q": "What superpower do orange veggies like carrots and sweet potatoes have?",
+      "options": ["Vitamin A for sharp eyes", "Making you sleepy", "Turning your hair blue"],
+      "answer": 0,
+      "note": "Orange veggies are rich in beta-carotene (Vitamin A), which helps your eyes see clearly!"
+    },
+    {
+      "id": "q6",
+      "q": "Why are whole grains like oatmeal and brown rice great for breakfast?",
+      "options": ["Slow-release fiber & brain fuel", "They have zero nutrients", "They replace water"],
+      "answer": 0,
+      "note": "Whole grains have fiber and B-vitamins that fuel your brain all morning long!"
     }
   ],
   "miniChallenge": {
-    "title": "Mini challenge",
-    "description": "Find three different food colors in your kitchen with a grown-up.",
+    "title": "Rainbow Kitchen Quest",
+    "description": "Find three different food colors in your kitchen or meal today and check them off!",
     "cta": "I'll try it →"
   },
   "didYouKnow": {
     "title": "Did you know?",
-    "fact": "Bananas are berries, but strawberries are not botanically berries."
+    "fact": "Bananas are berries, but strawberries are not botanically berries!"
   }
 }
-

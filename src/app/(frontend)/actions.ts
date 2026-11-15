@@ -79,6 +79,7 @@ async function fetchAccurateUserStats(userId?: string | null): Promise<{
     let query = adminDb
       .from('food_logs')
       .select('created_at')
+      .neq('food_group', '__brain_bites__')
       .order('created_at', { ascending: false })
 
     if (userId) {
@@ -732,6 +733,7 @@ export async function getFoodLogsAction(): Promise<ActionResult<FoodLogItem[]>> 
     let query = adminDb
       .from('food_logs')
       .select('id, user_id, food_name, food_group, score, summary, created_at')
+      .neq('food_group', '__brain_bites__')
       .order('created_at', { ascending: false })
       .limit(50)
 
@@ -958,6 +960,7 @@ export async function adminGetDashboardDataAction(): Promise<ActionResult<AdminD
       supabase
         .from('food_logs')
         .select('*', { count: 'exact' })
+        .neq('food_group', '__brain_bites__')
         .order('created_at', { ascending: false })
         .limit(500),
     ])
@@ -981,6 +984,7 @@ export async function adminGetDashboardDataAction(): Promise<ActionResult<AdminD
       const fallbackScans = await supabase
         .from('food_logs')
         .select('*', { count: 'exact' })
+        .neq('food_group', '__brain_bites__')
         .limit(500)
       if (fallbackScans.error) {
         return { ok: false, error: `Database error (food_logs): ${fallbackScans.error.message}` }
@@ -1158,11 +1162,17 @@ export async function adminInspectTableAction(
     if (!isAllowed) return { ok: false, error: 'Unauthorized.' }
 
     const supabase = createAdminClient()
-    const { data, error } = await supabase
+    let query = supabase
       .from(tableName)
       .select('*')
       .order('created_at', { ascending: false })
       .limit(50)
+
+    if (tableName === 'food_logs') {
+      query = query.neq('food_group', '__brain_bites__')
+    }
+
+    const { data, error } = await query
 
     if (error) return { ok: false, error: error.message }
 
@@ -1288,6 +1298,9 @@ export type BrainBitesData = {
   }
 }
 
+const BRAIN_BITES_ROW_ID = '00000000-0000-0000-0000-000000000b17'
+const BRAIN_BITES_GROUP = '__brain_bites__'
+
 const DEFAULT_BRAIN_BITES: BrainBitesData = {
   questions: [
     {
@@ -1311,33 +1324,193 @@ const DEFAULT_BRAIN_BITES: BrainBitesData = {
       answer: 0,
       note: 'Water hydrates your body and brain so you can run and think fast.',
     },
+    {
+      id: 'q4',
+      q: 'Which nutrient in milk and yogurt helps build strong bones and teeth?',
+      options: ['Calcium', 'Added sugar', 'Food coloring'],
+      answer: 0,
+      note: 'Calcium teams up with Vitamin D to make your bones and teeth super strong!',
+    },
+    {
+      id: 'q5',
+      q: 'What superpower do orange veggies like carrots and sweet potatoes have?',
+      options: ['Vitamin A for sharp eyes', 'Making you sleepy', 'Turning your hair blue'],
+      answer: 0,
+      note: 'Orange veggies are rich in beta-carotene (Vitamin A), which helps your eyes see clearly!',
+    },
+    {
+      id: 'q6',
+      q: 'Why are whole grains like oatmeal and brown rice great for breakfast?',
+      options: ['Slow-release fiber & brain fuel', 'They have zero nutrients', 'They replace water'],
+      answer: 0,
+      note: 'Whole grains have fiber and B-vitamins that fuel your brain all morning long!',
+    },
   ],
   miniChallenge: {
-    title: 'Mini challenge',
-    description: 'Find three different food colors in your kitchen with a grown-up.',
+    title: 'Rainbow Kitchen Quest',
+    description: 'Find three different food colors in your kitchen or meal today and check them off!',
     cta: "I'll try it →",
   },
   didYouKnow: {
     title: 'Did you know?',
-    fact: 'Bananas are berries, but strawberries are not botanically berries.',
+    fact: 'Bananas are berries, but strawberries are not botanically berries!',
   },
 }
 
 async function readBrainBitesFile(): Promise<BrainBitesData> {
+  // 1. First try reading live config from Supabase so Vercel deployments stay in sync
+  try {
+    const supabase = createAdminClient()
+    const { data, error } = await supabase
+      .from('food_logs')
+      .select('summary')
+      .eq('id', BRAIN_BITES_ROW_ID)
+      .maybeSingle()
+
+    if (!error && data?.summary) {
+      const parsed = JSON.parse(String(data.summary)) as BrainBitesData
+      if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+        return parsed
+      }
+    }
+  } catch {
+    // Fallback to local file or default
+  }
+
+  // 2. Fallback to local JSON file
   try {
     const filePath = path.join(process.cwd(), 'src', 'data', 'brainBites.json')
     const content = await fs.readFile(filePath, 'utf-8')
-    return JSON.parse(content) as BrainBitesData
+    const parsed = JSON.parse(content) as BrainBitesData
+    if (Array.isArray(parsed.questions) && parsed.questions.length > 0) {
+      return parsed
+    }
   } catch {
-    return DEFAULT_BRAIN_BITES
+    // Ignore read error
   }
+
+  return DEFAULT_BRAIN_BITES
 }
 
 async function writeBrainBitesFile(data: BrainBitesData): Promise<void> {
-  const dirPath = path.join(process.cwd(), 'src', 'data')
-  await fs.mkdir(dirPath, { recursive: true })
-  const filePath = path.join(dirPath, 'brainBites.json')
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8')
+  // 1. Persist in Supabase so it works on Vercel (where filesystem is read-only)
+  try {
+    const supabase = createAdminClient()
+    await supabase.from('food_logs').upsert({
+      id: BRAIN_BITES_ROW_ID,
+      user_id: null,
+      food_name: 'BrainBitesConfig',
+      food_group: BRAIN_BITES_GROUP,
+      score: 100,
+      summary: JSON.stringify(data),
+    })
+  } catch {
+    // Ignore DB error if offline
+  }
+
+  // 2. Also update local JSON file when running in local dev
+  try {
+    const dirPath = path.join(process.cwd(), 'src', 'data')
+    await fs.mkdir(dirPath, { recursive: true })
+    const filePath = path.join(dirPath, 'brainBites.json')
+    await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8')
+  } catch {
+    // Expected on read-only serverless environments like Vercel
+  }
+}
+
+export async function generateAiQuizQuestionAction(
+  topic?: string
+): Promise<ActionResult<BrainBitesQuestion>> {
+  const cleanTopic = clean(topic, 60) || 'healthy foods, vitamins, and rainbow nutrition'
+  const fallbackPool: Omit<BrainBitesQuestion, 'id'>[] = [
+    {
+      q: 'Which vitamin in oranges and strawberries helps protect your body from colds?',
+      options: ['Vitamin C', 'Refined sugar', 'Cooking oil'],
+      answer: 0,
+      note: 'Vitamin C is an immune-system superhero found in citrus fruits, berries, and bell peppers!',
+    },
+    {
+      q: 'What does dietary fiber in apples, beans, and broccoli help your body do?',
+      options: ['Keep your tummy happy & full', 'Make your teeth turn green', 'Replace sleep'],
+      answer: 0,
+      note: 'Fiber feeds friendly gut bacteria and helps your digestion work smoothly!',
+    },
+    {
+      q: 'Which food group is the best builder for strong muscles after playing sports?',
+      options: ['Mighty Proteins (eggs, fish, beans, chicken)', 'Sticky candies', 'Soda pop'],
+      answer: 0,
+      note: 'Protein provides amino acids, the building blocks your muscles need to grow and repair!',
+    },
+    {
+      q: 'Why do green leafy vegetables like spinach and broccoli make you feel energized?',
+      options: ['They contain iron and folate for healthy blood', 'They are full of caffeine', 'They glow in the dark'],
+      answer: 0,
+      note: 'Iron helps carry oxygen all through your body so you never feel tired!',
+    },
+  ]
+
+  try {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
+    if (apiKey) {
+      const ai = new GoogleGenAI({ apiKey })
+      const prompt = `You are Bananini, the playful nutrition monkey for kids aged 5-12.
+Create ONE fun multiple-choice nutrition quiz question about: "${cleanTopic}".
+Return ONLY valid JSON with this exact shape (no markdown code fences):
+{
+  "q": "Question text here?",
+  "options": ["Choice A", "Choice B", "Choice C"],
+  "answer": 0,
+  "note": "One cheerful sentence explaining why the answer is right!"
+}`
+
+      const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.8-flash']
+      for (const modelName of modelsToTry) {
+        try {
+          const res = await ai.models.generateContent({
+            model: modelName,
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          })
+          const raw = (res.text || '').trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim()
+          const parsed = JSON.parse(raw)
+          if (
+            parsed &&
+            typeof parsed.q === 'string' &&
+            Array.isArray(parsed.options) &&
+            parsed.options.length >= 3
+          ) {
+            return {
+              ok: true,
+              data: {
+                id: `ai_q_${Date.now()}`,
+                q: clean(parsed.q, 180),
+                options: [
+                  clean(parsed.options[0], 80),
+                  clean(parsed.options[1], 80),
+                  clean(parsed.options[2], 80),
+                ],
+                answer: Math.max(0, Math.min(2, Number(parsed.answer) || 0)),
+                note: clean(parsed.note, 200) || 'Healthy foods give your body awesome superpowers!',
+              },
+            }
+          }
+        } catch {
+          // Try next model
+        }
+      }
+    }
+  } catch {
+    // Fallback below
+  }
+
+  const pick = fallbackPool[Math.floor(Math.random() * fallbackPool.length)]
+  return {
+    ok: true,
+    data: {
+      id: `ai_q_${Date.now()}`,
+      ...pick,
+    },
+  }
 }
 
 export async function getBrainBitesDataAction(): Promise<ActionResult<BrainBitesData>> {

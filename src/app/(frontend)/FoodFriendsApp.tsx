@@ -16,6 +16,7 @@ import {
   analyzeFoodAction,
   askBananiniAction,
   deleteUserFoodLogAction,
+  generateAiQuizQuestionAction,
   getBrainBitesDataAction,
   getFoodLogsAction,
   loginAction,
@@ -763,7 +764,16 @@ export default function FoodFriendsApp({
               }}
             />
           )}
-          {view === 'learn' && <Learn isAdmin={Boolean(user?.isAdmin)} />}
+          {view === 'learn' && (
+            <Learn
+              isAdmin={Boolean(user?.isAdmin)}
+              onScanFood={() => navigate('scan')}
+              onAskBananini={(promptText) => {
+                setChatPrefill(promptText)
+                navigate('chat')
+              }}
+            />
+          )}
           {view === 'chat' && (
             <Chat
               user={user}
@@ -2433,7 +2443,15 @@ function ExplorerLogView({
   )
 }
 
-function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
+function Learn({
+  isAdmin = false,
+  onScanFood,
+  onAskBananini,
+}: {
+  isAdmin?: boolean
+  onScanFood?: () => void
+  onAskBananini?: (promptText: string) => void
+}) {
   const [brainData, setBrainData] = useState<BrainBitesData>({
     questions: [
       {
@@ -2457,27 +2475,60 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
         answer: 0,
         note: 'Water hydrates your body and brain so you can run and think fast.',
       },
+      {
+        id: 'q4',
+        q: 'Which nutrient in milk and yogurt helps build strong bones and teeth?',
+        options: ['Calcium', 'Added sugar', 'Food coloring'],
+        answer: 0,
+        note: 'Calcium teams up with Vitamin D to make your bones and teeth super strong!',
+      },
+      {
+        id: 'q5',
+        q: 'What superpower do orange veggies like carrots and sweet potatoes have?',
+        options: ['Vitamin A for sharp eyes', 'Making you sleepy', 'Turning your hair blue'],
+        answer: 0,
+        note: 'Orange veggies are rich in beta-carotene (Vitamin A), which helps your eyes see clearly!',
+      },
+      {
+        id: 'q6',
+        q: 'Why are whole grains like oatmeal and brown rice great for breakfast?',
+        options: ['Slow-release fiber & brain fuel', 'They have zero nutrients', 'They replace water'],
+        answer: 0,
+        note: 'Whole grains have fiber and B-vitamins that fuel your brain all morning long!',
+      },
     ],
     miniChallenge: {
-      title: 'Mini challenge',
-      description: 'Find three different food colors in your kitchen with a grown-up.',
+      title: 'Rainbow Kitchen Quest',
+      description: 'Find three different food colors in your kitchen or meal today and check them off!',
       cta: "I'll try it →",
     },
     didYouKnow: {
       title: 'Did you know?',
-      fact: 'Bananas are berries, but strawberries are not botanically berries.',
+      fact: 'Bananas are berries, but strawberries are not botanically berries!',
     },
   })
   const [index, setIndex] = useState(0)
   const [answer, setAnswer] = useState<number | null>(null)
   const [score, setScore] = useState(0)
   const [finished, setFinished] = useState(false)
+  const [generatingAiQ, setGeneratingAiQ] = useState(false)
   const [isPending, startTransition] = useTransition()
+
+  // Interactive Mini Challenge State
+  const [challengeActive, setChallengeActive] = useState(false)
+  const [checkedColors, setCheckedColors] = useState<string[]>([])
+
+  // Interactive Fun Facts Carousel State
+  const [factIndex, setFactIndex] = useState(0)
+
+  // Interactive Superpower Food Guide State
+  const [activeGuideGroup, setActiveGuideGroup] = useState<string>('fruit')
 
   // Admin Management State
   const [manageOpen, setManageOpen] = useState(false)
   const [editingQuestion, setEditingQuestion] = useState<BrainBitesQuestion | null>(null)
   const [isAddingQuestion, setIsAddingQuestion] = useState(false)
+  const [confirmDeleteQId, setConfirmDeleteQId] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
   // Question Form State
@@ -2485,13 +2536,18 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
   const [qOptions, setQOptions] = useState<[string, string, string]>(['', '', ''])
   const [qAnswer, setQAnswer] = useState<number>(0)
   const [qNote, setQNote] = useState('')
+  const [aiDraftLoading, setAiDraftLoading] = useState(false)
 
   // Extras Form State
-  const [challengeTitle, setChallengeTitle] = useState('')
-  const [challengeDesc, setChallengeDesc] = useState('')
-  const [challengeCta, setChallengeCta] = useState('')
-  const [factTitle, setFactTitle] = useState('')
-  const [factText, setFactText] = useState('')
+  const [challengeTitle, setChallengeTitle] = useState('Rainbow Kitchen Quest')
+  const [challengeDesc, setChallengeDesc] = useState(
+    'Find three different food colors in your kitchen or meal today and check them off!'
+  )
+  const [challengeCta, setChallengeCta] = useState("I'll try it →")
+  const [factTitle, setFactTitle] = useState('Did you know?')
+  const [factText, setFactText] = useState(
+    'Bananas are berries, but strawberries are not botanically berries!'
+  )
 
   useEffect(() => {
     getBrainBitesDataAction().then((res) => {
@@ -2505,6 +2561,138 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
       }
     })
   }, [])
+
+  const extraFacts = [
+    brainData.didYouKnow.fact ||
+      'Bananas are berries, but strawberries are not botanically berries!',
+    'Carrots were originally purple and yellow before orange carrots became popular!',
+    'Broccoli has more Vitamin C per gram than an orange!',
+    'Your brain uses about 20% of all the energy you get from your food each day!',
+    'Apples float in water because 25% of their volume is actually fresh air!',
+    'Spinach and beans have iron, the exact same mineral found in stars and planets!',
+  ]
+  const currentFact = extraFacts[factIndex % extraFacts.length]
+
+  const challengeColors = [
+    { id: 'red', label: '🍎 Red / Pink', power: 'Heart Power' },
+    { id: 'orange', label: '🥕 Orange / Yellow', power: 'Super Vision' },
+    { id: 'green', label: '🥦 Bright Green', power: 'Bone & Iron Boost' },
+    { id: 'purple', label: '🫐 Blue / Purple', power: 'Brain Memory' },
+    { id: 'white', label: '🥛 White / Cream', power: 'Strong Teeth' },
+    { id: 'gold', label: '🌾 Golden Brown', power: 'Steady Energy' },
+  ]
+
+  const toggleChallengeColor = (colorId: string) => {
+    setCheckedColors((prev) =>
+      prev.includes(colorId) ? prev.filter((id) => id !== colorId) : [...prev, colorId]
+    )
+  }
+
+  const foodGuideGroups = [
+    {
+      id: 'fruit',
+      emoji: '🍎',
+      name: 'Sweet Fruits',
+      power: 'Immune Shield & Quick Spark',
+      color: '#FDE8E8',
+      vitamins: ['Vitamin C', 'Potassium', 'Antioxidants', 'Fiber'],
+      examples: 'Apples, bananas, berries, mangoes, oranges, watermelon',
+      summary:
+        'Fruits are nature’s colorful snack! Their Vitamin C protects you from sniffles while natural fiber keeps your energy smooth.',
+    },
+    {
+      id: 'vegetable',
+      emoji: '🥦',
+      name: 'Crunchy Veggies',
+      power: 'Super Vision & Happy Tummy',
+      color: '#E3F6E8',
+      vitamins: ['Vitamin A', 'Vitamin K', 'Folate', 'Iron'],
+      examples: 'Broccoli, carrots, spinach, bell peppers, cucumbers, sweet corn',
+      summary:
+        'Different veggie colors unlock different powers—orange veggies sharpen your eyes, and leafy greens build strong blood and bones!',
+    },
+    {
+      id: 'grain',
+      emoji: '🌾',
+      name: 'Whole Grains',
+      power: 'Long-Lasting Brain & Play Fuel',
+      color: '#FFF6D6',
+      vitamins: ['B-Vitamins', 'Dietary Fiber', 'Magnesium', 'Complex Carbs'],
+      examples: 'Oatmeal, brown rice, whole-wheat bread, corn, quinoa',
+      summary:
+        'Whole grains release energy slowly like a steady battery so you can focus in class and run fast on the playground.',
+    },
+    {
+      id: 'protein',
+      emoji: '🍗',
+      name: 'Mighty Proteins',
+      power: 'Muscle Builder & Body Repair',
+      color: '#EFE4F7',
+      vitamins: ['Amino Acids', 'Iron', 'Zinc', 'Vitamin B12'],
+      examples: 'Eggs, chicken, fish, beans, lentils, tofu, peanut butter',
+      summary:
+        'Proteins are your body’s building blocks! They repair muscles, help you grow taller, and keep you full for hours.',
+    },
+    {
+      id: 'dairy',
+      emoji: '🥛',
+      name: 'Creamy Dairy',
+      power: 'Unbreakable Bones & Smile Shield',
+      color: '#E2F2FC',
+      vitamins: ['Calcium', 'Vitamin D', 'Probiotics', 'Protein'],
+      examples: 'Milk, yogurt, cheese, fortified soy or almond milk',
+      summary:
+        'Calcium and Vitamin D work together like armor for your growing bones and teeth, while yogurt probiotics help your tummy!',
+    },
+  ]
+
+  const currentGuide =
+    foodGuideGroups.find((g) => g.id === activeGuideGroup) || foodGuideGroups[0]
+
+  const handleAddBonusAiQuestion = async (customTopic?: string) => {
+    if (generatingAiQ) return
+    setGeneratingAiQ(true)
+    setFeedback(null)
+    try {
+      const res = await generateAiQuizQuestionAction(customTopic)
+      if (res.ok) {
+        const newQ = res.data
+        setBrainData((prev) => {
+          const nextQuestions = [...prev.questions, newQ]
+          setIndex(nextQuestions.length - 1)
+          setAnswer(null)
+          setFinished(false)
+          return { ...prev, questions: nextQuestions }
+        })
+        setFeedback({
+          type: 'ok',
+          text: '✨ Bananini created a fresh AI bonus question for you!',
+        })
+      }
+    } finally {
+      setGeneratingAiQ(false)
+    }
+  }
+
+  const handleAutoFillModalWithAi = async () => {
+    if (aiDraftLoading) return
+    setAiDraftLoading(true)
+    try {
+      const res = await generateAiQuizQuestionAction(qTitle || 'fun nutrition superpowers for kids')
+      if (res.ok) {
+        setQTitle(res.data.q)
+        setQOptions([
+          res.data.options[0] || '',
+          res.data.options[1] || '',
+          res.data.options[2] || '',
+        ])
+        setQAnswer(res.data.answer)
+        setQNote(res.data.note)
+      }
+    } finally {
+      setAiDraftLoading(false)
+    }
+  }
 
   const openNewQuestionModal = () => {
     setEditingQuestion(null)
@@ -2527,7 +2715,10 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
   const handleSaveQuestion = (e: React.FormEvent) => {
     e.preventDefault()
     if (!qTitle.trim() || !qOptions[0].trim() || !qOptions[1].trim()) {
-      alert('Please provide a question and at least 2 answer choices.')
+      setFeedback({
+        type: 'err',
+        text: 'Please provide a question title and at least 2 answer choices.',
+      })
       return
     }
 
@@ -2545,7 +2736,7 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
         setIsAddingQuestion(false)
         setFeedback({
           type: 'ok',
-          text: `Question ${editingQuestion ? 'updated' : 'added'} successfully!`,
+          text: `✅ Question ${editingQuestion ? 'updated' : 'added'} and saved!`,
         })
       } else {
         setFeedback({ type: 'err', text: res.error })
@@ -2554,12 +2745,15 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
   }
 
   const handleDeleteQuestion = (questionId: string) => {
-    if (!confirm('Are you sure you want to delete this question?')) return
     startTransition(async () => {
       const res = await adminDeleteBrainBitesQuestionAction(questionId)
       if (res.ok) {
         setBrainData(res.data)
-        setFeedback({ type: 'ok', text: 'Quiz question deleted.' })
+        setConfirmDeleteQId(null)
+        if (index >= res.data.questions.length) {
+          setIndex(Math.max(0, res.data.questions.length - 1))
+        }
+        setFeedback({ type: 'ok', text: '🗑️ Quiz question deleted.' })
       } else {
         setFeedback({ type: 'err', text: res.error })
       }
@@ -2582,14 +2776,18 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
       })
       if (res.ok) {
         setBrainData(res.data)
-        setFeedback({ type: 'ok', text: 'Mini challenge & fun fact saved!' })
+        setFactIndex(0)
+        setFeedback({ type: 'ok', text: '✅ Mini challenge & fun fact saved!' })
       } else {
         setFeedback({ type: 'err', text: res.error })
       }
     })
   }
 
-  const activeQuestions = brainData.questions.length > 0 ? brainData.questions : questions
+  const activeQuestions: BrainBitesQuestion[] =
+    brainData.questions.length > 0
+      ? brainData.questions
+      : questions.map((item, idx) => ({ id: `fallback_${idx}`, ...item }))
   const q = activeQuestions[index] || activeQuestions[0]
 
   const choose = (choice: number) => {
@@ -2599,7 +2797,7 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
   }
 
   const next = () => {
-    if (index === activeQuestions.length - 1) setFinished(true)
+    if (index >= activeQuestions.length - 1) setFinished(true)
     else {
       setIndex((i) => i + 1)
       setAnswer(null)
@@ -2632,8 +2830,9 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
                 Manage quiz questions, answers, and sidebar widgets right inside this page.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
+                type="button"
                 onClick={() => setManageOpen(!manageOpen)}
                 className={`rounded-2xl px-4 py-2.5 text-xs font-black transition ${
                   manageOpen
@@ -2644,6 +2843,7 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
                 {manageOpen ? '✕ Close Manager' : '⚙️ Manage Brain Bites'}
               </button>
               <button
+                type="button"
                 onClick={openNewQuestionModal}
                 className="flex items-center gap-1.5 rounded-2xl bg-[#287A52] px-4 py-2.5 text-xs font-black text-white shadow-xs hover:bg-[#1E6240]"
               >
@@ -2661,7 +2861,7 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
               }`}
             >
               <span>{feedback.text}</span>
-              <button onClick={() => setFeedback(null)} className="underline font-black">
+              <button onClick={() => setFeedback(null)} className="font-black underline">
                 Dismiss
               </button>
             </div>
@@ -2692,7 +2892,7 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
                               key={optIdx}
                               className={`rounded-md px-2 py-0.5 text-[11px] ${
                                 optIdx === item.answer
-                                  ? 'bg-[#E8F4DF] text-[#1E6939] font-black'
+                                  ? 'bg-[#E8F4DF] font-black text-[#1E6939]'
                                   : 'bg-[#F2F5F2] text-[#6B7B70]'
                               }`}
                             >
@@ -2708,17 +2908,39 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
                       </div>
                       <div className="flex items-center gap-2 self-end sm:self-center">
                         <button
+                          type="button"
                           onClick={() => openEditQuestionModal(item)}
                           className="rounded-xl border border-[#D5E3DB] bg-[#F9FBFA] px-3 py-1.5 text-xs font-black text-[#173C4A] hover:bg-[#EEF3F0]"
                         >
                           ✏️ Edit
                         </button>
-                        <button
-                          onClick={() => handleDeleteQuestion(item.id)}
-                          className="rounded-xl bg-[#FBEAE7] px-3 py-1.5 text-xs font-black text-[#B03E31] hover:bg-[#F6D3CD]"
-                        >
-                          🗑️ Delete
-                        </button>
+                        {confirmDeleteQId === item.id ? (
+                          <div className="flex items-center gap-1 rounded-xl bg-[#FDF1EF] px-2 py-1">
+                            <button
+                              type="button"
+                              disabled={isPending}
+                              onClick={() => handleDeleteQuestion(item.id)}
+                              className="rounded-lg bg-[#C93B2B] px-2 py-1 text-[11px] font-black text-white"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteQId(null)}
+                              className="px-1.5 text-[11px] font-bold text-[#5E6E64]"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteQId(item.id)}
+                            className="rounded-xl bg-[#FBEAE7] px-3 py-1.5 text-xs font-black text-[#B03E31] hover:bg-[#F6D3CD]"
+                          >
+                            🗑️ Delete
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -2736,7 +2958,7 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
                       Edit Mini Challenge &amp; Did You Know?
                     </h4>
                     <p className="text-xs font-semibold text-[#7D8C81]">
-                      Changes will display immediately in the sidebar below.
+                      Changes are saved to the cloud and display immediately below.
                     </p>
                   </div>
                   <button
@@ -2806,64 +3028,151 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
             Bananini&apos;s brain bites
           </h1>
         </div>
-        <div className="flex gap-2">
-          <span className="rounded-full bg-[#FFF0B5] px-4 py-2 text-sm font-extrabold">
-            <Icon name="star" size={16} /> {score * 10} points
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            disabled={generatingAiQ}
+            onClick={() => handleAddBonusAiQuestion()}
+            className="inline-flex items-center gap-1.5 rounded-full border-2 border-[#287A52] bg-white px-4 py-2 text-xs font-black text-[#287A52] shadow-2xs transition hover:bg-[#EAF7DE] disabled:opacity-50"
+          >
+            <span>{generatingAiQ ? '🌀 Creating...' : '✨ New AI Question'}</span>
+          </button>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FFF0B5] px-4 py-2 text-sm font-extrabold text-[#3D2A1E]">
+            <Icon name="star" size={16} /> {score * 10} quiz pts
           </span>
         </div>
       </div>
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_280px]">
-        <section className="rounded-[32px] border border-[#E0E5DB] bg-white p-6 sm:p-9">
+
+      {!isAdmin && feedback && (
+        <div className="flex items-center justify-between rounded-2xl border border-[#BCE3C8] bg-[#EAF8EE] px-4 py-3 text-xs font-black text-[#1E6939]">
+          <span>{feedback.text}</span>
+          <button onClick={() => setFeedback(null)} className="underline">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_300px]">
+        <section className="rounded-[32px] border border-[#E0E5DB] bg-white p-6 shadow-xs sm:p-9">
           {finished ? (
-            <div className="py-10 text-center">
+            <div className="py-6 text-center">
               <div className="mx-auto w-fit rounded-full bg-[#E4F1D5] p-2">
                 <Bananini small />
               </div>
-              <p className="mt-6 text-xs font-extrabold uppercase tracking-widest text-[#708076]">
-                Adventure complete
-              </p>
-              <h2 className="mt-2 text-4xl font-black">
+              <span className="mt-4 inline-block rounded-full bg-[#FFF0B5] px-3.5 py-1 text-xs font-black uppercase tracking-wider text-[#5A4310]">
+                {score === activeQuestions.length
+                  ? '🏆 Superfood Genius!'
+                  : score >= Math.ceil(activeQuestions.length / 2)
+                    ? '🌟 Rainbow Nutritionist!'
+                    : '🌱 Curious Food Sprout!'}
+              </span>
+              <h2 className="mt-3 text-4xl font-black text-[#173C4A]">
                 You got {score} of {activeQuestions.length}!
               </h2>
-              <p className="mx-auto mt-3 max-w-md font-semibold text-[#6E7C72]">
+              <p className="mx-auto mt-2 max-w-md text-sm font-semibold text-[#6E7C72]">
                 {score === activeQuestions.length
-                  ? 'Amazing! Your food-smarts are growing strong.'
-                  : 'Nice exploring. Every answer helps your food-smarts grow.'}
+                  ? 'Amazing! You answered every nutrition question correctly!'
+                  : 'Great exploring! Every question helps your food-smarts grow stronger.'}
               </p>
-              <Button onClick={restart} className="mt-7">
-                Play again
-                <Icon name="arrow" />
-              </Button>
+
+              {/* Quick Answer Takeaways */}
+              <div className="mt-6 max-h-56 space-y-2 overflow-y-auto rounded-2xl bg-[#F7FAF7] p-4 text-left">
+                <p className="text-[11px] font-black uppercase tracking-wider text-[#64756A]">
+                  What You Learned Today:
+                </p>
+                {activeQuestions.map((item, idx) => (
+                  <div
+                    key={item.id || idx}
+                    className="rounded-xl border border-[#E2ECE5] bg-white p-3 text-xs"
+                  >
+                    <p className="font-black text-[#173C4A]">
+                      {idx + 1}. {item.q}
+                    </p>
+                    <p className="mt-0.5 font-extrabold text-[#287A52]">
+                      ✓ {item.options[item.answer]}
+                    </p>
+                    {item.note && (
+                      <p className="mt-0.5 font-semibold text-[#68776D]">{item.note}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-7 flex flex-wrap justify-center gap-3">
+                <Button onClick={restart}>
+                  Play again
+                  <Icon name="arrow" />
+                </Button>
+                <Button
+                  tone="white"
+                  disabled={generatingAiQ}
+                  onClick={() => handleAddBonusAiQuestion()}
+                >
+                  {generatingAiQ ? '🌀 Generating...' : '✨ Add AI Bonus Question'}
+                </Button>
+                {onScanFood && (
+                  <Button tone="yellow" onClick={onScanFood}>
+                    <Icon name="scan" />
+                    Scan a Food
+                  </Button>
+                )}
+              </div>
             </div>
           ) : (
             <>
-              <div className="flex items-center justify-between text-xs font-extrabold">
+              <div className="flex items-center justify-between text-xs font-extrabold text-[#5E6E64]">
                 <span>
                   QUESTION {index + 1} OF {activeQuestions.length}
                 </span>
                 <span>{Math.round(((index + 1) / activeQuestions.length) * 100)}%</span>
               </div>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#EBEFE7]">
-                <div
-                  className="h-full rounded-full bg-[#E9B833] transition-all"
-                  style={{ width: `${((index + 1) / activeQuestions.length) * 100}%` }}
-                />
+
+              {/* Question Progress Pills */}
+              <div className="mt-2.5 flex gap-1.5">
+                {activeQuestions.map((item, dotIdx) => (
+                  <button
+                    key={item.id || dotIdx}
+                    type="button"
+                    onClick={() => {
+                      setIndex(dotIdx)
+                      setAnswer(null)
+                    }}
+                    className={`h-2.5 flex-1 rounded-full transition-all ${
+                      dotIdx === index
+                        ? 'bg-[#E9B833]'
+                        : dotIdx < index
+                          ? 'bg-[#58A36D]'
+                          : 'bg-[#EBEFE7]'
+                    }`}
+                    title={`Jump to Question ${dotIdx + 1}`}
+                  />
+                ))}
               </div>
-              <h2 className="mt-8 text-2xl font-black leading-tight sm:text-3xl">{q.q}</h2>
+
+              <h2 className="mt-7 text-2xl font-black leading-tight text-[#173C4A] sm:text-3xl">
+                {q.q}
+              </h2>
               <div className="mt-6 space-y-3">
                 {q.options.map((option, i) => {
                   const selected = answer === i
                   const correct = answer !== null && i === q.answer
                   return (
                     <button
-                      key={option}
+                      key={`${q.id}-${i}`}
+                      type="button"
                       onClick={() => choose(i)}
-                      className={`flex w-full items-center gap-4 rounded-2xl border-2 p-4 text-left font-extrabold transition ${correct ? 'border-[#58A36D] bg-[#E8F4DF]' : selected ? 'border-[#D46F6F] bg-[#FAE5E1]' : 'border-[#E4E8E1] hover:border-[#A5BDAA]'}`}
+                      className={`flex w-full items-center gap-4 rounded-2xl border-2 p-4 text-left font-extrabold transition ${
+                        correct
+                          ? 'border-[#58A36D] bg-[#E8F4DF] text-[#173C4A]'
+                          : selected
+                            ? 'border-[#D46F6F] bg-[#FAE5E1] text-[#6E2626]'
+                            : 'border-[#E4E8E1] hover:border-[#A5BDAA]'
+                      }`}
                     >
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-sm">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-sm font-black shadow-2xs">
                         {String.fromCharCode(65 + i)}
                       </span>
-                      {option}
+                      <span>{option}</span>
                       {correct && (
                         <span className="ml-auto text-[#287A52]">
                           <Icon name="check" />
@@ -2874,14 +3183,40 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
                 })}
               </div>
               {answer !== null && (
-                <div className="mt-6 rounded-2xl bg-[#F3F6EE] p-4">
-                  <p className="font-black">
-                    {answer === q.answer ? 'Great thinking!' : 'Good try!'}
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-[#66736A]">{q.note}</p>
+                <div className="mt-6 flex flex-col justify-between gap-3 rounded-2xl bg-[#F3F6EE] p-4 sm:flex-row sm:items-center">
+                  <div>
+                    <p className="font-black text-[#173C4A]">
+                      {answer === q.answer ? '🎉 Great thinking!' : '💡 Good try!'}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-[#5C6B60]">{q.note}</p>
+                  </div>
+                  {onAskBananini && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onAskBananini(
+                          `Hi Bananini! In Brain Bites I learned: "${q.q}" and the answer is "${q.options[q.answer]}". Can you tell me a fun story or example about why this is true?`
+                        )
+                      }
+                      className="shrink-0 rounded-xl border border-[#287A52]/30 bg-white px-3 py-2 text-xs font-black text-[#287A52] hover:bg-[#EAF7DE]"
+                    >
+                      💬 Ask Bananini Why
+                    </button>
+                  )}
                 </div>
               )}
-              <div className="mt-6 flex justify-end">
+              <div className="mt-6 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  disabled={index === 0}
+                  onClick={() => {
+                    setIndex((i) => Math.max(0, i - 1))
+                    setAnswer(null)
+                  }}
+                  className="rounded-xl border border-[#DCE4DD] px-3.5 py-2 text-xs font-black text-[#5A6B60] hover:bg-[#F3F7F4] disabled:opacity-35"
+                >
+                  ← Previous
+                </button>
                 <Button onClick={next} disabled={answer === null}>
                   {index === activeQuestions.length - 1 ? 'See my score' : 'Next bite'}
                   <Icon name="arrow" />
@@ -2890,40 +3225,243 @@ function Learn({ isAdmin = false }: { isAdmin?: boolean }) {
             </>
           )}
         </section>
+
+        {/* Interactive Sidebar: Mini Challenge + Fun Facts */}
         <aside className="space-y-4">
-          <div className="rounded-[28px] bg-[#FFF0B9] p-6">
-            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white">
-              <Icon name="fire" />
-            </span>
-            <h3 className="mt-5 text-xl font-black">{brainData.miniChallenge.title}</h3>
-            <p className="mt-2 text-sm font-semibold leading-relaxed text-[#6E694F]">
+          {/* Interactive Mini Challenge Card */}
+          <div className="rounded-[28px] bg-[#FFF0B9] p-6 shadow-2xs">
+            <div className="flex items-center justify-between">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white shadow-2xs">
+                <Icon name="fire" />
+              </span>
+              {checkedColors.length >= 3 && (
+                <span className="rounded-full bg-[#287A52] px-3 py-1 text-[11px] font-black text-white">
+                  🏆 Quest Done!
+                </span>
+              )}
+            </div>
+            <h3 className="mt-4 text-xl font-black text-[#2E2410]">
+              {brainData.miniChallenge.title}
+            </h3>
+            <p className="mt-1.5 text-xs font-semibold leading-relaxed text-[#6E694F]">
               {brainData.miniChallenge.description}
             </p>
-            <button className="mt-5 text-sm font-extrabold text-[#7D6120]">
-              {brainData.miniChallenge.cta}
-            </button>
+
+            {!challengeActive ? (
+              <button
+                type="button"
+                onClick={() => setChallengeActive(true)}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#3D2A1E] px-4 py-2.5 text-xs font-black text-[#FFD84D] shadow-2xs transition hover:bg-[#2a1d14] active:scale-95"
+              >
+                <span>{brainData.miniChallenge.cta}</span>
+              </button>
+            ) : (
+              <div className="mt-4 space-y-2 border-t border-[#E6D48F] pt-3">
+                <div className="flex items-center justify-between text-[11px] font-black text-[#5A4618]">
+                  <span>Check 3 colors you found:</span>
+                  <span>{checkedColors.length} / 3</span>
+                </div>
+                <div className="grid grid-cols-1 gap-1.5">
+                  {challengeColors.map((col) => {
+                    const checked = checkedColors.includes(col.id)
+                    return (
+                      <button
+                        key={col.id}
+                        type="button"
+                        onClick={() => toggleChallengeColor(col.id)}
+                        className={`flex items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-black transition ${
+                          checked
+                            ? 'bg-[#287A52] text-white shadow-2xs'
+                            : 'bg-white/80 text-[#3D2A1E] hover:bg-white'
+                        }`}
+                      >
+                        <span>{col.label}</span>
+                        <span className="text-[10px] opacity-85">
+                          {checked ? '✓ Found!' : col.power}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+                {checkedColors.length >= 3 && (
+                  <div className="rounded-xl bg-white/90 p-2.5 text-center text-xs font-black text-[#1E6939]">
+                    🎉 Awesome job! You found {checkedColors.length} rainbow colors!
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setCheckedColors([])}
+                    className="text-[11px] font-bold text-[#7D6120] hover:underline"
+                  >
+                    Reset
+                  </button>
+                  {onScanFood && (
+                    <button
+                      type="button"
+                      onClick={onScanFood}
+                      className="rounded-lg bg-[#287A52] px-2.5 py-1 text-[11px] font-black text-white hover:bg-[#1e6040]"
+                    >
+                      📷 Scan Food →
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-          <div className="rounded-[28px] bg-[#DDEFC8] p-6">
-            <p className="text-xs font-extrabold uppercase tracking-widest text-[#68806B]">
-              {brainData.didYouKnow.title}
+
+          {/* Interactive Did You Know? Card */}
+          <div className="rounded-[28px] bg-[#DDEFC8] p-6 shadow-2xs">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-extrabold uppercase tracking-widest text-[#526B55]">
+                {brainData.didYouKnow.title}
+              </p>
+              <span className="rounded-full bg-white/70 px-2.5 py-0.5 text-[10px] font-black text-[#287A52]">
+                Fact {(factIndex % extraFacts.length) + 1}/{extraFacts.length}
+              </span>
+            </div>
+            <p className="mt-3 text-sm font-black leading-relaxed text-[#173C4A]">
+              &ldquo;{currentFact}&rdquo;
             </p>
-            <p className="mt-3 font-black leading-relaxed">
-              {brainData.didYouKnow.fact}
-            </p>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[#C4DFAA] pt-3">
+              <button
+                type="button"
+                onClick={() => setFactIndex((i) => i + 1)}
+                className="rounded-xl bg-white px-3 py-1.5 text-xs font-black text-[#254336] shadow-2xs transition hover:bg-[#F3FAF0] active:scale-95"
+              >
+                🔄 Next Fun Fact
+              </button>
+              {onAskBananini && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onAskBananini(
+                      `Hi Bananini! Tell me more about this fun fact: "${currentFact}"`
+                    )
+                  }
+                  className="text-xs font-black text-[#287A52] hover:underline"
+                >
+                  Ask Bananini →
+                </button>
+              )}
+            </div>
           </div>
         </aside>
       </div>
+
+      {/* Interactive 6 Food Group Superpowers Explorer */}
+      <section className="rounded-[32px] border border-[#E0E5DB] bg-white p-6 shadow-xs sm:p-8">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div>
+            <span className="rounded-full bg-[#EAF7DE] px-3 py-1 text-[11px] font-black uppercase tracking-wider text-[#287A52]">
+              🌈 Interactive Nutrition Guide
+            </span>
+            <h2 className="mt-2 text-2xl font-black text-[#173C4A]">
+              Explore Food Group Superpowers
+            </h2>
+            <p className="text-xs font-semibold text-[#6D7C72]">
+              Tap any food group below to discover how it powers up your body and brain!
+            </p>
+          </div>
+        </div>
+
+        {/* Food Group Selector Tabs */}
+        <div className="mt-5 flex flex-wrap gap-2">
+          {foodGuideGroups.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              onClick={() => setActiveGuideGroup(g.id)}
+              className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-black transition ${
+                activeGuideGroup === g.id
+                  ? 'bg-[#173C4A] text-white shadow-xs'
+                  : 'bg-[#F4F7F4] text-[#32473B] hover:bg-[#E7EFE9]'
+              }`}
+            >
+              <span className="text-base">{g.emoji}</span>
+              <span>{g.name}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Selected Food Group Detail Card */}
+        <div
+          className="mt-5 rounded-[24px] p-5 sm:p-6 transition-colors"
+          style={{ backgroundColor: currentGuide.color }}
+        >
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+            <div className="space-y-2 max-w-2xl">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/85 px-3 py-1 text-xs font-black text-[#173C4A]">
+                <span>{currentGuide.emoji}</span>
+                <span>Superpower: {currentGuide.power}</span>
+              </div>
+              <h3 className="text-2xl font-black text-[#173C4A]">{currentGuide.name}</h3>
+              <p className="text-sm font-semibold leading-relaxed text-[#2D4238]">
+                {currentGuide.summary}
+              </p>
+              <p className="text-xs font-bold text-[#495E53]">
+                🍽️ <span className="font-black">Tasty Examples:</span> {currentGuide.examples}
+              </p>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {currentGuide.vitamins.map((vit) => (
+                  <span
+                    key={vit}
+                    className="rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-black text-[#173C4A] shadow-2xs"
+                  >
+                    ✨ {vit}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap sm:flex-col gap-2 shrink-0">
+              <button
+                type="button"
+                disabled={generatingAiQ}
+                onClick={() => handleAddBonusAiQuestion(currentGuide.name)}
+                className="rounded-xl bg-[#173C4A] px-4 py-2.5 text-xs font-black text-white shadow-xs transition hover:bg-[#245263] disabled:opacity-50"
+              >
+                {generatingAiQ ? '🌀 Creating Quiz...' : `🎯 Quiz Me on ${currentGuide.name}`}
+              </button>
+              {onAskBananini && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onAskBananini(
+                      `Hi Bananini! Can you tell me fun facts and snack ideas for ${currentGuide.name} (${currentGuide.examples})?`
+                    )
+                  }
+                  className="rounded-xl bg-white px-4 py-2.5 text-xs font-black text-[#173C4A] shadow-xs transition hover:bg-[#F7FAF8]"
+                >
+                  💬 Ask Bananini
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Add / Edit Question Modal */}
       {isAddingQuestion && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-xs">
           <div className="w-full max-w-lg rounded-[28px] border border-[#D5E3DB] bg-white p-6 shadow-2xl sm:p-8">
-            <h3 className="text-xl font-black text-[#173C4A]">
-              {editingQuestion ? 'Edit Brain Bites Question' : 'Add New Brain Bites Question'}
-            </h3>
-            <p className="mt-1 text-xs font-semibold text-[#6E7E73]">
-              Kids will see this question immediately inside Bananini&apos;s brain bites.
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-black text-[#173C4A]">
+                  {editingQuestion ? 'Edit Brain Bites Question' : 'Add New Brain Bites Question'}
+                </h3>
+                <p className="mt-1 text-xs font-semibold text-[#6E7E73]">
+                  Kids will see this question immediately inside Bananini&apos;s brain bites.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={aiDraftLoading}
+                onClick={handleAutoFillModalWithAi}
+                className="shrink-0 rounded-xl bg-[#EAF7DE] px-3 py-1.5 text-xs font-black text-[#287A52] hover:bg-[#D8F0C5] disabled:opacity-50"
+              >
+                {aiDraftLoading ? '🌀 Thinking...' : '✨ Auto-Fill with AI'}
+              </button>
+            </div>
 
             <form onSubmit={handleSaveQuestion} className="mt-5 space-y-4">
               <div>

@@ -1671,7 +1671,7 @@ function Scanner({
     }
   }
 
-  // Main scan function - uses Gemini AI Vision autonomously
+  // Main scan function - uses Gemini AI Vision autonomously and rejects non-food images
   const scan = async () => {
     if (!photoBase64 && !photo) return
     setScanning(true)
@@ -1683,19 +1683,16 @@ function Scanner({
         const res = await analyzeFoodAction(photoBase64, photoMime)
         if (res.ok) {
           onUpdateScanState((prev) => ({ ...prev, result: res.data, saved: false }))
-          setScanning(false)
-          return
         } else {
+          onUpdateScanState((prev) => ({ ...prev, result: null, saved: false }))
           setScanError(res.error)
         }
+        return
       }
-
-      // Fallback only if model unreachable
-      await new Promise((r) => setTimeout(r, 900))
-      const fallback = resultFor('Fresh Food')
-      onUpdateScanState((prev) => ({ ...prev, result: fallback, saved: false }))
+      setScanError('Please take or upload a clear photo of food first.')
     } catch {
-      setScanError('Could not analyze the photo. Please try again.')
+      onUpdateScanState((prev) => ({ ...prev, result: null, saved: false }))
+      setScanError('Could not analyze the photo. Please try again with a clear photo of food.')
     } finally {
       setScanning(false)
     }
@@ -3938,10 +3935,13 @@ function Learn({
             </div>
             <div className="rounded-2xl border border-[#E2ECE5] bg-white px-3.5 py-2.5 text-center">
               <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#6E7E73]">
-                Hero Cards
+                Accuracy
               </p>
               <p className="mt-0.5 text-lg font-black text-[#173C4A]">
-                🃏 {unlockedCardsCount} / {SUPERFOOD_COLLECTIBLE_CARDS.length}
+                🎯{' '}
+                {learnProfile.totalAnswered > 0
+                  ? `${Math.round((learnProfile.totalCorrect / learnProfile.totalAnswered) * 100)}%`
+                  : '100%'}
               </p>
             </div>
           </div>
@@ -4015,12 +4015,6 @@ function Learn({
               </div>
 
               <div className="mt-6 flex flex-wrap justify-center gap-3">
-                <Button
-                  tone="white"
-                  onClick={() => setActiveLearnTab('cards')}
-                >
-                  🃏 View Unlocked Hero Cards ({unlockedCardsCount}/{SUPERFOOD_COLLECTIBLE_CARDS.length})
-                </Button>
                 {onScanFood && (
                   <Button tone="yellow" onClick={onScanFood}>
                     <Icon name="scan" />
@@ -4296,274 +4290,6 @@ function Learn({
           </div>
         </aside>
       </div>
-
-      {/* INTERACTIVE PROGRESS LEARNING HUB: Mastery Map, Collectible Hero Cards & Superpowers Guide */}
-      <section className="rounded-[32px] border border-[#E0E5DB] bg-white p-6 shadow-xs sm:p-8">
-        <div className="flex flex-col justify-between gap-4 border-b border-[#EEF3EF] pb-5 sm:flex-row sm:items-center">
-          <div>
-            <span className="rounded-full bg-[#EAF7DE] px-3 py-1 text-[11px] font-black uppercase tracking-wider text-[#287A52]">
-              🚀 Interactive Progress Learning
-            </span>
-            <h2 className="mt-2 text-2xl font-black text-[#173C4A]">
-              Your Nutrition Adventure &amp; Mastery
-            </h2>
-            <p className="text-xs font-semibold text-[#6D7C72]">
-              Level up all 6 food kingdoms, study secret flashcards for bonus XP, and unlock Superfood Hero Cards!
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveLearnTab('mastery')}
-              className={`rounded-2xl px-4 py-2.5 text-xs font-black transition ${
-                activeLearnTab === 'mastery'
-                  ? 'bg-[#173C4A] text-white shadow-xs'
-                  : 'bg-[#F3F7F4] text-[#32473B] hover:bg-[#E6EFE9]'
-              }`}
-            >
-              🗺️ Mastery Map
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveLearnTab('cards')}
-              className={`rounded-2xl px-4 py-2.5 text-xs font-black transition ${
-                activeLearnTab === 'cards'
-                  ? 'bg-[#173C4A] text-white shadow-xs'
-                  : 'bg-[#F3F7F4] text-[#32473B] hover:bg-[#E6EFE9]'
-              }`}
-            >
-              🃏 Hero Cards ({unlockedCardsCount}/{SUPERFOOD_COLLECTIBLE_CARDS.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveLearnTab('guide')}
-              className={`rounded-2xl px-4 py-2.5 text-xs font-black transition ${
-                activeLearnTab === 'guide'
-                  ? 'bg-[#173C4A] text-white shadow-xs'
-                  : 'bg-[#F3F7F4] text-[#32473B] hover:bg-[#E6EFE9]'
-              }`}
-            >
-              🌈 Food Guide
-            </button>
-          </div>
-        </div>
-
-        {/* TAB 1: 6-KINGDOM NUTRITION MASTERY PROGRESS MAP */}
-        {activeLearnTab === 'mastery' && (
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {foodGuideGroups.map((group) => {
-              const meta = categoryMeta[group.id] || categoryMeta.habits
-              const pct = Math.min(100, learnProfile.masteryByCategory[group.id] || 10)
-              const studiedToday = learnProfile.studiedCards.includes(`${todayKey}_${group.id}`)
-              return (
-                <div
-                  key={group.id}
-                  className="flex flex-col justify-between rounded-2xl border border-[#E3ECE6] bg-[#FAFDFB] p-4 shadow-2xs"
-                >
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span
-                        className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-xs font-black"
-                        style={{ backgroundColor: meta.badgeBg, color: meta.badgeText }}
-                      >
-                        <span>{group.emoji}</span>
-                        <span>{group.name}</span>
-                      </span>
-                      <span className="text-xs font-black text-[#173C4A]">{pct}% Mastered</span>
-                    </div>
-                    <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-[#E6EFE9]">
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{ width: `${pct}%`, backgroundColor: meta.barColor }}
-                      />
-                    </div>
-                    <p className="mt-2.5 text-xs font-bold text-[#2F4438]">
-                      ⚡ <span className="font-black">Power:</span> {group.power}
-                    </p>
-                    <p className="mt-1 text-[11px] font-semibold leading-relaxed text-[#64756A]">
-                      💡 {group.flashcardSecret}
-                    </p>
-                  </div>
-
-                  <div className="mt-4 flex items-center justify-between border-t border-[#EDF3EF] pt-3">
-                    <button
-                      type="button"
-                      disabled={studiedToday}
-                      onClick={() => handleStudyFlashcard(group.id)}
-                      className={`rounded-xl px-3 py-1.5 text-[11px] font-black transition ${
-                        studiedToday
-                          ? 'bg-[#E8F4DF] text-[#1E6939]'
-                          : 'bg-[#173C4A] text-white hover:bg-[#245263]'
-                      }`}
-                    >
-                      {studiedToday ? '✓ Studied Today (+10 XP)' : '📖 Study Flashcard (+10 XP)'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveGuideGroup(group.id)
-                        setActiveLearnTab('guide')
-                      }}
-                      className="text-[11px] font-black text-[#287A52] hover:underline"
-                    >
-                      Explore →
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {/* TAB 2: COLLECTIBLE SUPERFOOD HERO CARDS */}
-        {activeLearnTab === 'cards' && (
-          <div className="mt-6">
-            <p className="mb-4 text-xs font-bold text-[#5E6E64]">
-              Earn Learning XP from your Daily 15 Questions and Study Flashcards to unlock all 6 Superfood Hero Cards! Tap any unlocked card to inspect its secret trivia.
-            </p>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {SUPERFOOD_COLLECTIBLE_CARDS.map((card) => {
-                const unlocked = learnProfile.totalXp >= card.unlockXp
-                const isSelected = flippedCardId === card.id
-                return (
-                  <button
-                    key={card.id}
-                    type="button"
-                    disabled={!unlocked}
-                    onClick={() => setFlippedCardId(isSelected ? null : card.id)}
-                    className={`group relative flex flex-col justify-between rounded-[24px] border-2 p-5 text-left transition-all ${
-                      unlocked
-                        ? isSelected
-                          ? 'border-[#173C4A] shadow-md scale-[1.01]'
-                          : 'border-[#DCE6DF] hover:border-[#287A52]'
-                        : 'border-dashed border-gray-200 bg-gray-50 opacity-65 cursor-not-allowed'
-                    }`}
-                    style={{ backgroundColor: unlocked ? card.bg : undefined }}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white text-2xl shadow-2xs">
-                          {unlocked ? card.emoji : '🔒'}
-                        </span>
-                        <span
-                          className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase ${
-                            unlocked
-                              ? 'bg-[#287A52] text-white'
-                              : 'bg-gray-200 text-gray-600'
-                          }`}
-                        >
-                          {unlocked ? '★ Unlocked' : `Unlock at ${card.unlockXp} XP`}
-                        </span>
-                      </div>
-                      <h3 className="mt-3 text-lg font-black text-[#173C4A]">
-                        {unlocked ? card.name : 'Mystery Superfood Hero'}
-                      </h3>
-                      <p className="text-xs font-extrabold text-[#4A6154]">
-                        {unlocked ? card.role : `Need ${Math.max(0, card.unlockXp - learnProfile.totalXp)} more XP`}
-                      </p>
-                      {unlocked && (
-                        <p className="mt-2 text-xs font-semibold leading-relaxed text-[#2C3E34]">
-                          ⚡ {card.power}
-                        </p>
-                      )}
-                    </div>
-
-                    {unlocked && (
-                      <div className="mt-3 rounded-xl bg-white/85 p-2.5 text-[11px] font-bold text-[#173C4A]">
-                        {isSelected ? (
-                          <span>🔍 Secret Trivia: {card.secret}</span>
-                        ) : (
-                          <span className="text-[#287A52]">Tap to reveal secret trivia →</span>
-                        )}
-                      </div>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: INTERACTIVE 6 FOOD GROUP SUPERPOWERS GUIDE */}
-        {activeLearnTab === 'guide' && (
-          <div className="mt-6">
-            <div className="flex flex-wrap gap-2">
-              {foodGuideGroups.map((g) => (
-                <button
-                  key={g.id}
-                  type="button"
-                  onClick={() => setActiveGuideGroup(g.id)}
-                  className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-black transition ${
-                    activeGuideGroup === g.id
-                      ? 'bg-[#173C4A] text-white shadow-xs'
-                      : 'bg-[#F4F7F4] text-[#32473B] hover:bg-[#E7EFE9]'
-                  }`}
-                >
-                  <span className="text-base">{g.emoji}</span>
-                  <span>{g.name}</span>
-                </button>
-              ))}
-            </div>
-
-            <div
-              className="mt-5 rounded-[24px] p-5 sm:p-6 transition-colors"
-              style={{ backgroundColor: currentGuide.color }}
-            >
-              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-                <div className="max-w-2xl space-y-2">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-white/85 px-3 py-1 text-xs font-black text-[#173C4A]">
-                    <span>{currentGuide.emoji}</span>
-                    <span>Superpower: {currentGuide.power}</span>
-                  </div>
-                  <h3 className="text-2xl font-black text-[#173C4A]">{currentGuide.name}</h3>
-                  <p className="text-sm font-semibold leading-relaxed text-[#2D4238]">
-                    {currentGuide.summary}
-                  </p>
-                  <p className="text-xs font-bold text-[#495E53]">
-                    🍽️ <span className="font-black">Tasty Examples:</span> {currentGuide.examples}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {currentGuide.vitamins.map((vit) => (
-                      <span
-                        key={vit}
-                        className="rounded-lg bg-white/90 px-2.5 py-1 text-[11px] font-black text-[#173C4A] shadow-2xs"
-                      >
-                        ✨ {vit}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col">
-                  <button
-                    type="button"
-                    disabled={learnProfile.studiedCards.includes(`${todayKey}_${currentGuide.id}`)}
-                    onClick={() => handleStudyFlashcard(currentGuide.id)}
-                    className="rounded-xl bg-[#173C4A] px-4 py-2.5 text-xs font-black text-white shadow-xs transition hover:bg-[#245263] disabled:bg-[#287A52]"
-                  >
-                    {learnProfile.studiedCards.includes(`${todayKey}_${currentGuide.id}`)
-                      ? '✓ Studied Today (+10 XP)'
-                      : `📖 Claim +10 XP for ${currentGuide.name}`}
-                  </button>
-                  {onAskBananini && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onAskBananini(
-                          `Hi Bananini! Can you tell me fun facts and snack ideas for ${currentGuide.name} (${currentGuide.examples})?`
-                        )
-                      }
-                      className="rounded-xl bg-white px-4 py-2.5 text-xs font-black text-[#173C4A] shadow-xs transition hover:bg-[#F7FAF8]"
-                    >
-                      💬 Ask Bananini
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </section>
 
       {/* STRICTLY ADMIN-ONLY: Add / Edit Question Modal */}
       {isAdmin && isAddingQuestion && (
@@ -5546,6 +5272,7 @@ function AuthModal({
 }) {
   const [emailValue, setEmailValue] = useState('')
   const [passwordValue, setPasswordValue] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
 
   const handleFillAdmin = () => {
     setEmailValue('admin@foodfriends.com')
@@ -5635,16 +5362,26 @@ function AuthModal({
           </label>
           <label className="block text-sm font-extrabold">
             Password
-            <input
-              required
-              minLength={8}
-              name="password"
-              type="password"
-              value={passwordValue}
-              onChange={(e) => setPasswordValue(e.target.value)}
-              className="mt-2 h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white px-4 outline-none focus:border-[#62A278]"
-              placeholder="At least 8 characters"
-            />
+            <div className="relative mt-2">
+              <input
+                required
+                minLength={8}
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                value={passwordValue}
+                onChange={(e) => setPasswordValue(e.target.value)}
+                className="h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white pl-4 pr-20 outline-none focus:border-[#62A278]"
+                placeholder="At least 8 characters"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-xl bg-[#EDF2E9] px-2.5 py-1.5 text-xs font-black text-[#224735] transition hover:bg-[#DCE6DF]"
+              >
+                {showPassword ? '🙈 Hide' : '👁️ Show'}
+              </button>
+            </div>
           </label>
           {error && (
             <p

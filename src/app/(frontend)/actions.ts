@@ -521,13 +521,24 @@ const GROUP_COLORS: Record<FoodGroup, string> = {
 
 const FOOD_ANALYSIS_PROMPT = `You are Bananini 🍌, the world's best food detective and kid mascot for FoodFriends.
 
-Examine this food photo very carefully.
+Examine this photo very carefully.
+
+STEP 1 — STRICT FOOD VERIFICATION:
+First, determine whether the photo actually contains real edible human food or a beverage.
+- If the image shows something that is NOT edible food or a drink (for example: a person, selfie, face, hand without food, pet/animal, laptop, phone, screen, toy, furniture, room, wall, paper, car, clothing, or blurry/empty background), you MUST reject it and return ONLY this JSON object:
+{
+  "isFood": false,
+  "nonFoodReason": "Short friendly message telling the user what you see instead of food (e.g. 'That looks like a laptop, not a meal! Please scan real food or a drink.')"
+}
+
+STEP 2 — IF AND ONLY IF IT IS REAL FOOD OR A DRINK:
 1. Identify the food accurately based ONLY on what you see in the photo (e.g. if you see pancakes, it is Pancakes/Grain; if you see an apple, it is Apple/Fruit; if you see chicken nuggets, it is Protein/Treat).
 2. ESTIMATE THE QUANTITY / PORTION SHOWN IN THE PHOTO (e.g. "Stack of 5 pancakes (~220g)", "1 medium apple (~150g)", "Bowl of cereal with milk (~250ml)").
 3. CALCULATE THE NUTRITION FACTS SCALED SPECIFICALLY TO THAT VISIBLE QUANTITY (e.g. if there are 5 pancakes, calculate calories and protein for all 5 pancakes, not just 1 small bite!).
 
 Return ONLY a valid raw JSON object (no markdown, no backticks, no fences, no comments) with this exact structure:
 {
+  "isFood": true,
   "name": "Food name (e.g. Golden Fluffy Pancakes)",
   "group": "grain",
   "estimatedPortion": "e.g. Stack of 5 fluffy pancakes (~220g)",
@@ -557,7 +568,8 @@ FOOD GROUP CLASSIFICATION RULES:
 - "treat": candy, cookies, soda, potato chips, cake, ice cream, deep-fried snacks
 
 CRITICAL:
-- "group" MUST be exactly one of: "fruit", "vegetable", "protein", "grain", "dairy", "treat"
+- If the image is NOT food or a beverage, "isFood" MUST be false.
+- When "isFood" is true, "group" MUST be exactly one of: "fruit", "vegetable", "protein", "grain", "dairy", "treat"
 - Pancakes and waffles MUST be classified as "grain" (or "treat" if coated in chocolate/sprinkles), NEVER as "fruit"
 - Return ONLY the raw JSON string.`
 
@@ -583,6 +595,8 @@ export async function analyzeFoodAction(
 
     // Model candidate list in priority order
     const candidateModels = [
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
       'gemini-3.5-flash-lite',
       'gemini-3.5-flash',
       'gemini-3.8-flash',
@@ -642,7 +656,26 @@ export async function analyzeFoodAction(
       if (match) {
         parsed = JSON.parse(match[0])
       } else {
-        return { ok: false, error: 'Bananini got confused! Try taking a clearer photo.' }
+        return { ok: false, error: 'Bananini got confused! Try taking a clearer photo of your food.' }
+      }
+    }
+
+    const rawName = String(parsed.name || '').trim()
+    const rawNameLower = rawName.toLowerCase()
+    if (
+      parsed.isFood === false ||
+      rawNameLower === 'not food' ||
+      rawNameLower === 'non-food' ||
+      rawNameLower === 'none' ||
+      rawNameLower === 'unknown'
+    ) {
+      const reason = String(
+        parsed.nonFoodReason ||
+          "That doesn't look like food! Please take or upload a clear photo of real food or a drink."
+      ).trim()
+      return {
+        ok: false,
+        error: `🚫 Not Food Detected: ${reason}`,
       }
     }
 

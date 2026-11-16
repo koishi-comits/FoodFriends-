@@ -493,8 +493,6 @@ async function verifyActiveEmailAddress(
 export type SignupOtpChallenge = {
   email: string
   expiresInSeconds: number
-  deliveryChannel: 'email' | 'instant_preview'
-  previewOtpCode?: string
 }
 
 export async function requestSignupOtpAction(input: {
@@ -547,33 +545,11 @@ export async function requestSignupOtpAction(input: {
     // continue if profiles lookup fails
   }
 
-  // 3. Generate a 6-digit OTP code and store pending registration in httpOnly cookie (10 min expiry)
-  const otpCode = String(Math.floor(100000 + Math.random() * 900000))
+  // 3. Dispatch real OTP email to the user's inbox via Resend (if configured) or Supabase Auth OTP
+  const customOtpCode = String(Math.floor(100000 + Math.random() * 900000))
   const expiresAt = Date.now() + 10 * 60 * 1000
+  let sentViaResend = false
 
-  const cookieStore = await cookies()
-  cookieStore.set(
-    'foodfriends_pending_otp',
-    JSON.stringify({
-      displayName,
-      email,
-      password,
-      ageGroup,
-      otpCode,
-      expiresAt,
-    }),
-    {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 10,
-    }
-  )
-
-  let sentViaExternalEmail = false
-
-  // 4. Optional: If RESEND_API_KEY is configured, send styled 6-digit OTP email via Resend
   const resendApiKey = process.env.RESEND_API_KEY
   if (resendApiKey) {
     try {
@@ -586,30 +562,77 @@ export async function requestSignupOtpAction(input: {
         body: JSON.stringify({
           from: process.env.RESEND_FROM_EMAIL || 'FoodFriends <onboarding@resend.dev>',
           to: [email],
-          subject: `${otpCode} is your FoodFriends verification code`,
+          subject: `${customOtpCode} is your FoodFriends verification code`,
           html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border-radius:16px;background:#FFFDF7;border:1px solid #DCE6DF;">
             <h2 style="color:#173C4A;margin-top:0;">🍌 Welcome to FoodFriends, ${displayName}!</h2>
-            <p style="color:#4A5D52;font-size:15px;">Enter this 6-digit OTP code to verify your active email and finish creating your Explorer account:</p>
-            <div style="font-size:32px;font-weight:900;letter-spacing:6px;text-align:center;padding:16px;background:#EAF7DE;color:#287A52;border-radius:12px;margin:20px 0;">${otpCode}</div>
+            <p style="color:#4A5D52;font-size:15px;">Enter this OTP verification code in the app to finish creating your Explorer account:</p>
+            <div style="font-size:32px;font-weight:900;letter-spacing:6px;text-align:center;padding:16px;background:#EAF7DE;color:#287A52;border-radius:12px;margin:20px 0;">${customOtpCode}</div>
             <p style="color:#7A897F;font-size:12px;">This code expires in 10 minutes.</p>
           </div>`,
         }),
       })
       if (res.ok) {
-        sentViaExternalEmail = true
+        sentViaResend = true
       }
     } catch {
-      // Fallback below
+      // Fallback to Supabase Auth email below
     }
   }
+
+  if (!sentViaResend) {
+    try {
+      const supabase = await createClient()
+      const { error: otpError } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          shouldCreateUser: true,
+          data: {
+            displayName,
+            ageGroup,
+          },
+        },
+      })
+
+      if (otpError) {
+        return {
+          ok: false,
+          error: `Could not send verification email to ${email}: ${otpError.message}`,
+        }
+      }
+    } catch {
+      return {
+        ok: false,
+        error: 'Could not dispatch the verification email right now. Please try again in a moment.',
+      }
+    }
+  }
+
+  // 4. Store pending registration metadata in httpOnly cookie (10 min expiry)
+  const cookieStore = await cookies()
+  cookieStore.set(
+    'foodfriends_pending_otp',
+    JSON.stringify({
+      displayName,
+      email,
+      password,
+      ageGroup,
+      customOtpCode: sentViaResend ? customOtpCode : null,
+      expiresAt,
+    }),
+    {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 10,
+    }
+  )
 
   return {
     ok: true,
     data: {
       email,
       expiresInSeconds: 600,
-      deliveryChannel: sentViaExternalEmail ? 'email' : 'instant_preview',
-      previewOtpCode: sentViaExternalEmail ? undefined : otpCode,
     },
   }
 }
@@ -621,8 +644,8 @@ export async function verifySignupOtpAction(input: {
   const email = clean(input.email, 120).toLowerCase()
   const enteredCode = clean(input.otpCode, 12).replace(/\D/g, '')
 
-  if (enteredCode.length !== 6) {
-    return { ok: false, error: 'Please enter the complete 6-digit OTP verification code.' }
+  if (enteredCode.length < 6 || enteredCode.length > 8) {
+    return { ok: false, error: 'Please enter the OTP verification code sent to your email.' }
   }
 
   const cookieStore = await cookies()
@@ -630,7 +653,7 @@ export async function verifySignupOtpAction(input: {
   if (!rawPending) {
     return {
       ok: false,
-      error: 'Your OTP session expired. Please click "Resend OTP" to get a fresh 6-digit code.',
+      error: 'Your OTP session expired. Please click "Resend OTP Code" to get a new email code.',
     }
   }
 
@@ -639,7 +662,7 @@ export async function verifySignupOtpAction(input: {
     email: string
     password: string
     ageGroup: '4-6' | '7-9' | '10-12'
-    otpCode: string
+    customOtpCode: string | null
     expiresAt: number
   }
 
@@ -653,7 +676,7 @@ export async function verifySignupOtpAction(input: {
     cookieStore.delete('foodfriends_pending_otp')
     return {
       ok: false,
-      error: 'That OTP code has expired (10-minute limit). Please request a new OTP code.',
+      error: 'That OTP code has expired (10-minute limit). Please click "Resend OTP Code".',
     }
   }
 
@@ -664,59 +687,132 @@ export async function verifySignupOtpAction(input: {
     }
   }
 
-  if (enteredCode !== pending.otpCode) {
-    return {
-      ok: false,
-      error: 'Incorrect 6-digit OTP code. Please check the code and try again.',
+  const supabase = await createClient()
+  const adminDb = createAdminClient()
+
+  // Path A: If sent via Resend custom OTP, verify against customOtpCode and create account
+  if (pending.customOtpCode) {
+    if (enteredCode !== pending.customOtpCode) {
+      return {
+        ok: false,
+        error: 'Incorrect OTP code. Please check the code in your email inbox and try again.',
+      }
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: pending.email,
+        password: pending.password,
+        options: {
+          data: {
+            displayName: pending.displayName,
+            ageGroup: pending.ageGroup,
+            email_verified_via_otp: true,
+          },
+        },
+      })
+
+      if (error || !data.user) {
+        return { ok: false, error: error?.message || 'We could not create that account.' }
+      }
+
+      await adminDb.from('profiles').upsert({
+        id: data.user.id,
+        email: pending.email,
+        display_name: pending.displayName,
+        age_group: pending.ageGroup,
+        points: 0,
+        streak: 0,
+        is_admin: false,
+      })
+
+      cookieStore.delete('foodfriends_pending_otp')
+      return {
+        ok: true,
+        data: {
+          id: data.user.id,
+          email: data.user.email || pending.email,
+          displayName: pending.displayName,
+          ageGroup: pending.ageGroup,
+          points: 0,
+          streak: 0,
+          isAdmin: false,
+        },
+      }
+    } catch {
+      return { ok: false, error: 'We could not create that account.' }
     }
   }
 
-  // OTP matches! Now create the verified account in Supabase
-  try {
-    const supabase = await createClient()
-    const { data, error } = await supabase.auth.signUp({
-      email: pending.email,
-      password: pending.password,
-      options: {
-        data: {
-          displayName: pending.displayName,
-          ageGroup: pending.ageGroup,
-          email_verified_via_otp: true,
-        },
-      },
-    })
+  // Path B: Verify the OTP code sent by Supabase Auth to the user's email inbox
+  let verifiedUserId: string | null = null
+  let verifiedUserEmail: string = pending.email
 
-    if (error || !data.user) {
-      return { ok: false, error: error?.message || 'We could not create that account.' }
+  const otpTypesToTry: Array<'email' | 'signup' | 'magiclink'> = ['email', 'signup', 'magiclink']
+  let lastVerifyError = ''
+
+  for (const otpType of otpTypesToTry) {
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: pending.email,
+      token: enteredCode,
+      type: otpType,
+    })
+    if (!error && data?.user) {
+      verifiedUserId = data.user.id
+      verifiedUserEmail = data.user.email || pending.email
+      break
     }
+    if (error) {
+      lastVerifyError = error.message
+    }
+  }
 
-    const adminDb = createAdminClient()
-    await adminDb.from('profiles').upsert({
-      id: data.user.id,
-      email: pending.email,
-      display_name: pending.displayName,
-      age_group: pending.ageGroup,
-      points: 0,
-      streak: 0,
-      is_admin: false,
-    })
-
-    cookieStore.delete('foodfriends_pending_otp')
-
+  if (!verifiedUserId) {
     return {
-      ok: true,
+      ok: false,
+      error:
+        lastVerifyError ||
+        'Incorrect or expired OTP code. Please check your email inbox and try again.',
+    }
+  }
+
+  // Save the user's chosen password and metadata onto their verified Supabase Auth account
+  try {
+    await supabase.auth.updateUser({
+      password: pending.password,
       data: {
-        id: data.user.id,
-        email: data.user.email || pending.email,
         displayName: pending.displayName,
         ageGroup: pending.ageGroup,
-        points: 0,
-        streak: 0,
-        isAdmin: false,
+        email_verified_via_otp: true,
       },
-    }
+    })
   } catch {
-    return { ok: false, error: 'We could not create that account. The email may already be used.' }
+    // ignore if password update is handled separately
+  }
+
+  await adminDb.from('profiles').upsert({
+    id: verifiedUserId,
+    email: verifiedUserEmail,
+    display_name: pending.displayName,
+    age_group: pending.ageGroup,
+    points: 0,
+    streak: 0,
+    is_admin: false,
+  })
+
+  cookieStore.delete('foodfriends_pending_otp')
+
+  return {
+    ok: true,
+    data: {
+      id: verifiedUserId,
+      email: verifiedUserEmail,
+      displayName: pending.displayName,
+      ageGroup: pending.ageGroup,
+      points: 0,
+      streak: 0,
+      isAdmin: false,
+    },
   }
 }
 

@@ -5292,7 +5292,6 @@ function AuthModal({
   // 2-Step OTP Verification State for Sign-Up
   const [signupStep, setSignupStep] = useState<'details' | 'otp'>('details')
   const [otpCode, setOtpCode] = useState('')
-  const [previewOtp, setPreviewOtp] = useState<string | null>(null)
   const [otpLoading, setOtpLoading] = useState(false)
   const [localError, setLocalError] = useState('')
   const [resendCooldown, setResendCooldown] = useState(0)
@@ -5302,7 +5301,6 @@ function AuthModal({
     if (mode === 'login') {
       setSignupStep('details')
       setOtpCode('')
-      setPreviewOtp(null)
     }
   }, [mode])
 
@@ -5340,8 +5338,7 @@ function AuthModal({
       if (res.ok) {
         setSignupStep('otp')
         setOtpCode('')
-        setPreviewOtp(res.data.previewOtpCode || null)
-        setResendCooldown(30)
+        setResendCooldown(60)
       } else {
         setLocalError(res.error)
       }
@@ -5363,8 +5360,7 @@ function AuthModal({
       })
       if (res.ok) {
         setOtpCode('')
-        setPreviewOtp(res.data.previewOtpCode || null)
-        setResendCooldown(30)
+        setResendCooldown(60)
       } else {
         setLocalError(res.error)
       }
@@ -5417,53 +5413,30 @@ function AuthModal({
         {mode === 'signup' && signupStep === 'otp' ? (
           <>
             <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#EAF7DE] px-3 py-1 text-xs font-black text-[#287A52]">
-              ✓ Active Email Verified • Step 2 of 2
+              📧 OTP Sent to Your Email • Step 2 of 2
             </div>
             <h2 id="auth-title" className="mt-2 text-3xl font-black tracking-tight text-[#173C4A]">
-              Enter OTP Code
+              Check Your Email
             </h2>
             <p className="mt-1.5 text-sm font-semibold text-[#6F7B73]">
-              We verified that <span className="font-black text-[#173C4A]">{emailValue}</span> is an active email address. Enter your 6-digit OTP code below to create your account.
+              We sent a verification OTP code to{' '}
+              <span className="font-black text-[#173C4A]">{emailValue}</span>. Open your email inbox
+              (and check Spam/Promotions), copy the code, and enter it below to finish creating your
+              account.
             </p>
-
-            {previewOtp && (
-              <div className="mt-4 rounded-2xl border-2 border-[#BCE3C8] bg-[#F2FAF4] p-3.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-wider text-[#287A52]">
-                      📬 Bananini Verification Inbox
-                    </p>
-                    <p className="mt-0.5 text-xs font-semibold text-[#4A6154]">
-                      Your 6-digit signup OTP code is:
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setOtpCode(previewOtp)}
-                    className="rounded-xl bg-[#287A52] px-3 py-1.5 text-xs font-black text-white transition hover:bg-[#1E6240]"
-                  >
-                    Auto-Fill Code
-                  </button>
-                </div>
-                <div className="mt-2 rounded-xl bg-white py-2 text-center text-2xl font-black tracking-[0.35em] text-[#173C4A] shadow-2xs">
-                  {previewOtp}
-                </div>
-              </div>
-            )}
 
             <form onSubmit={handleVerifyOtpAndCreate} className="mt-5 space-y-4">
               <label className="block text-sm font-extrabold text-[#173C4A]">
-                6-Digit OTP Verification Code
+                Email OTP Verification Code
                 <input
                   required
                   type="text"
                   inputMode="numeric"
-                  pattern="[0-9]{6}"
-                  maxLength={6}
+                  maxLength={8}
                   value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="000000"
-                  className="mt-2 h-14 w-full rounded-2xl border-2 border-[#D8E0D5] bg-white px-4 text-center text-2xl font-black tracking-[0.4em] text-[#173C4A] outline-none focus:border-[#287A52]"
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  placeholder="Enter OTP code"
+                  className="mt-2 h-14 w-full rounded-2xl border-2 border-[#D8E0D5] bg-white px-4 text-center text-2xl font-black tracking-[0.35em] text-[#173C4A] outline-none focus:border-[#287A52]"
                 />
               </label>
 
@@ -5478,7 +5451,7 @@ function AuthModal({
 
               <Button
                 type="submit"
-                disabled={isBusy || otpCode.length !== 6}
+                disabled={isBusy || otpCode.length < 6}
                 className="w-full"
               >
                 {isBusy ? 'Verifying OTP...' : 'Verify OTP & Create Account'}

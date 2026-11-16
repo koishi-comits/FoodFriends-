@@ -642,10 +642,30 @@ export async function verifySignupOtpAction(input: {
   otpCode: string
 }): Promise<ActionResult<UserSession>> {
   const email = clean(input.email, 120).toLowerCase()
-  const enteredCode = clean(input.otpCode, 12).replace(/\D/g, '')
+  const rawInput = clean(input.otpCode, 600)
+  const digitsOnly = rawInput.replace(/\D/g, '')
 
-  if (enteredCode.length < 6 || enteredCode.length > 8) {
-    return { ok: false, error: 'Please enter the OTP verification code sent to your email.' }
+  // Extract token if user pasted the verification link or pkce_ token from Supabase's email
+  let extractedTokenHash: string | null = null
+  if (rawInput.includes('token=')) {
+    try {
+      const urlObj = new URL(rawInput)
+      extractedTokenHash =
+        urlObj.searchParams.get('token') || urlObj.searchParams.get('token_hash')
+    } catch {
+      const match = rawInput.match(/[?&]token=([^&#\s]+)/)
+      if (match?.[1]) extractedTokenHash = decodeURIComponent(match[1])
+    }
+  } else if (rawInput.startsWith('pkce_') || rawInput.length > 20) {
+    extractedTokenHash = rawInput.trim()
+  }
+
+  if (!extractedTokenHash && (digitsOnly.length < 6 || digitsOnly.length > 8)) {
+    return {
+      ok: false,
+      error:
+        'Please enter the 6-digit OTP code (or paste the Sign-in verification link) from your email.',
+    }
   }
 
   const cookieStore = await cookies()
@@ -653,7 +673,7 @@ export async function verifySignupOtpAction(input: {
   if (!rawPending) {
     return {
       ok: false,
-      error: 'Your OTP session expired. Please click "Resend OTP Code" to get a new email code.',
+      error: 'Your OTP session expired. Please click "Resend OTP Code" to get a new email.',
     }
   }
 
@@ -676,7 +696,7 @@ export async function verifySignupOtpAction(input: {
     cookieStore.delete('foodfriends_pending_otp')
     return {
       ok: false,
-      error: 'That OTP code has expired (10-minute limit). Please click "Resend OTP Code".',
+      error: 'That verification code has expired (10-minute limit). Please click "Resend OTP Code".',
     }
   }
 
@@ -692,7 +712,7 @@ export async function verifySignupOtpAction(input: {
 
   // Path A: If sent via Resend custom OTP, verify against customOtpCode and create account
   if (pending.customOtpCode) {
-    if (enteredCode !== pending.customOtpCode) {
+    if (digitsOnly !== pending.customOtpCode) {
       return {
         ok: false,
         error: 'Incorrect OTP code. Please check the code in your email inbox and try again.',
@@ -744,26 +764,79 @@ export async function verifySignupOtpAction(input: {
     }
   }
 
-  // Path B: Verify the OTP code sent by Supabase Auth to the user's email inbox
+  // Path B: Verify numeric OTP or token_hash sent by Supabase Auth to the user's email inbox
   let verifiedUserId: string | null = null
   let verifiedUserEmail: string = pending.email
 
   const otpTypesToTry: Array<'email' | 'signup' | 'magiclink'> = ['email', 'signup', 'magiclink']
   let lastVerifyError = ''
 
-  for (const otpType of otpTypesToTry) {
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: pending.email,
-      token: enteredCode,
-      type: otpType,
-    })
-    if (!error && data?.user) {
-      verifiedUserId = data.user.id
-      verifiedUserEmail = data.user.email || pending.email
-      break
+  if (extractedTokenHash) {
+    // 1. Try verifying token_hash directly via Supabase SDK
+    for (const otpType of ['magiclink', 'email', 'signup'] as const) {
+      const { data, error } = await supabase.auth.verifyOtp({
+        token_hash: extractedTokenHash,
+        type: otpType,
+      })
+      if (!error && data?.user) {
+        verifiedUserId = data.user.id
+        verifiedUserEmail = data.user.email || pending.email
+        break
+      }
+      if (error) lastVerifyError = error.message
     }
-    if (error) {
-      lastVerifyError = error.message
+
+    // 2. If token_hash uses pkce_ format from Supabase's /auth/v1/verify link, verify against Supabase's verify endpoint
+    if (!verifiedUserId) {
+      try {
+        const supabaseUrl =
+          process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/^["']|["']$/g, '').trim() ||
+          'https://xmmmkqnrzlpomapeyzds.supabase.co'
+        const verifyEndpoint = `${supabaseUrl}/auth/v1/verify?token=${encodeURIComponent(
+          extractedTokenHash
+        )}&type=magiclink`
+        const verifyRes = await fetch(verifyEndpoint, { redirect: 'manual' })
+        const redirectLoc = verifyRes.headers.get('location') || ''
+        if (
+          (verifyRes.status === 302 || verifyRes.status === 303 || verifyRes.status === 200) &&
+          !redirectLoc.includes('error=')
+        ) {
+          // Token was valid and verified by Supabase! Now set password or sign in
+          const { data: signUpData } = await supabase.auth.signUp({
+            email: pending.email,
+            password: pending.password,
+            options: {
+              data: {
+                displayName: pending.displayName,
+                ageGroup: pending.ageGroup,
+                email_verified_via_otp: true,
+              },
+            },
+          })
+          if (signUpData?.user) {
+            verifiedUserId = signUpData.user.id
+            verifiedUserEmail = signUpData.user.email || pending.email
+          }
+        }
+      } catch {
+        // continue
+      }
+    }
+  } else {
+    for (const otpType of otpTypesToTry) {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: pending.email,
+        token: digitsOnly,
+        type: otpType,
+      })
+      if (!error && data?.user) {
+        verifiedUserId = data.user.id
+        verifiedUserEmail = data.user.email || pending.email
+        break
+      }
+      if (error) {
+        lastVerifyError = error.message
+      }
     }
   }
 
@@ -772,7 +845,7 @@ export async function verifySignupOtpAction(input: {
       ok: false,
       error:
         lastVerifyError ||
-        'Incorrect or expired OTP code. Please check your email inbox and try again.',
+        'Incorrect or expired verification code/link. Please check your email inbox and try again.',
     }
   }
 

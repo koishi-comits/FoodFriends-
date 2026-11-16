@@ -5419,24 +5419,32 @@ function AuthModal({
               Check Your Email
             </h2>
             <p className="mt-1.5 text-sm font-semibold text-[#6F7B73]">
-              We sent a verification OTP code to{' '}
-              <span className="font-black text-[#173C4A]">{emailValue}</span>. Open your email inbox
-              (and check Spam/Promotions), copy the code, and enter it below to finish creating your
-              account.
+              We sent a verification email to{' '}
+              <span className="font-black text-[#173C4A]">{emailValue}</span>. Enter the{' '}
+              <span className="font-black text-[#173C4A]">OTP code</span> from your email, or
+              right-click <span className="font-black text-[#287A52]">&ldquo;Sign in&rdquo; → Copy link address</span> in the email and paste it below:
             </p>
 
             <form onSubmit={handleVerifyOtpAndCreate} className="mt-5 space-y-4">
               <label className="block text-sm font-extrabold text-[#173C4A]">
-                Email OTP Verification Code
+                OTP Code or Verification Link from Email
                 <input
                   required
                   type="text"
-                  inputMode="numeric"
-                  maxLength={8}
                   value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                  placeholder="Enter OTP code"
-                  className="mt-2 h-14 w-full rounded-2xl border-2 border-[#D8E0D5] bg-white px-4 text-center text-2xl font-black tracking-[0.35em] text-[#173C4A] outline-none focus:border-[#287A52]"
+                  onChange={(e) => {
+                    const val = e.target.value.trim()
+                    if (val.includes('token=')) {
+                      const match = val.match(/[?&]token=([^&#\s]+)/)
+                      if (match?.[1]) {
+                        setOtpCode(decodeURIComponent(match[1]))
+                        return
+                      }
+                    }
+                    setOtpCode(val)
+                  }}
+                  placeholder="Enter 6-digit OTP or paste Sign-in link"
+                  className="mt-2 h-14 w-full rounded-2xl border-2 border-[#D8E0D5] bg-white px-4 text-center text-base font-black text-[#173C4A] outline-none focus:border-[#287A52]"
                 />
               </label>
 

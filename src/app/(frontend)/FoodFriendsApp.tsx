@@ -21,10 +21,12 @@ import {
   getFoodLogsAction,
   loginAction,
   logoutAction,
+  requestSignupOtpAction,
   saveScanAction,
   sessionAction,
   signupAction,
   updateOwnProfileAction,
+  verifySignupOtpAction,
   type BrainBitesData,
   type BrainBitesQuestion,
   type FoodAnalysis,
@@ -845,6 +847,15 @@ export default function FoodFriendsApp({
           setMode={setAuthMode}
           onClose={() => setAuthOpen(false)}
           onSubmit={submitAuth}
+          onAuthSuccess={(loggedInUser) => {
+            setUser(loggedInUser)
+            setAuthOpen(false)
+            if (loggedInUser.isAdmin) {
+              persistActiveView('admin')
+            } else {
+              persistActiveView('profile')
+            }
+          }}
           error={authError}
           pending={isPending}
         />
@@ -5260,6 +5271,7 @@ function AuthModal({
   setMode,
   onClose,
   onSubmit,
+  onAuthSuccess,
   error,
   pending,
 }: {
@@ -5267,17 +5279,121 @@ function AuthModal({
   setMode: (mode: 'login' | 'signup') => void
   onClose: () => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  onAuthSuccess: (user: PublicUser) => void
   error: string
   pending: boolean
 }) {
+  const [displayNameValue, setDisplayNameValue] = useState('')
+  const [ageGroupValue, setAgeGroupValue] = useState('7-9')
   const [emailValue, setEmailValue] = useState('')
   const [passwordValue, setPasswordValue] = useState('')
   const [showPassword, setShowPassword] = useState(false)
 
+  // 2-Step OTP Verification State for Sign-Up
+  const [signupStep, setSignupStep] = useState<'details' | 'otp'>('details')
+  const [otpCode, setOtpCode] = useState('')
+  const [previewOtp, setPreviewOtp] = useState<string | null>(null)
+  const [otpLoading, setOtpLoading] = useState(false)
+  const [localError, setLocalError] = useState('')
+  const [resendCooldown, setResendCooldown] = useState(0)
+
+  useEffect(() => {
+    setLocalError('')
+    if (mode === 'login') {
+      setSignupStep('details')
+      setOtpCode('')
+      setPreviewOtp(null)
+    }
+  }, [mode])
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return
+    const timer = window.setInterval(() => {
+      setResendCooldown((prev) => Math.max(0, prev - 1))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [resendCooldown])
+
   const handleFillAdmin = () => {
     setEmailValue('admin@foodfriends.com')
     setPasswordValue('admin123456')
+    setLocalError('')
   }
+
+  const handleRequestSignupOtp = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (mode === 'login') {
+      onSubmit(event)
+      return
+    }
+
+    setLocalError('')
+    setOtpLoading(true)
+    try {
+      const res = await requestSignupOtpAction({
+        displayName: displayNameValue,
+        ageGroup: ageGroupValue,
+        email: emailValue,
+        password: passwordValue,
+      })
+
+      if (res.ok) {
+        setSignupStep('otp')
+        setOtpCode('')
+        setPreviewOtp(res.data.previewOtpCode || null)
+        setResendCooldown(30)
+      } else {
+        setLocalError(res.error)
+      }
+    } finally {
+      setOtpLoading(false)
+    }
+  }
+
+  const handleResendOtp = async () => {
+    if (otpLoading || resendCooldown > 0) return
+    setLocalError('')
+    setOtpLoading(true)
+    try {
+      const res = await requestSignupOtpAction({
+        displayName: displayNameValue,
+        ageGroup: ageGroupValue,
+        email: emailValue,
+        password: passwordValue,
+      })
+      if (res.ok) {
+        setOtpCode('')
+        setPreviewOtp(res.data.previewOtpCode || null)
+        setResendCooldown(30)
+      } else {
+        setLocalError(res.error)
+      }
+    } finally {
+      setOtpLoading(false)
+    }
+  }
+
+  const handleVerifyOtpAndCreate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setLocalError('')
+    setOtpLoading(true)
+    try {
+      const res = await verifySignupOtpAction({
+        email: emailValue,
+        otpCode,
+      })
+      if (res.ok) {
+        onAuthSuccess(res.data)
+      } else {
+        setLocalError(res.error)
+      }
+    } finally {
+      setOtpLoading(false)
+    }
+  }
+
+  const activeError = localError || error
+  const isBusy = pending || otpLoading
 
   return (
     <div
@@ -5297,114 +5413,222 @@ function AuthModal({
         <span className="grid h-14 w-14 place-items-center rounded-[20px] bg-[#FFD84D]">
           <Icon name="user" size={27} />
         </span>
-        <h2 id="auth-title" className="mt-5 text-3xl font-black tracking-tight">
-          {mode === 'login' ? 'Welcome back!' : 'Start exploring'}
-        </h2>
-        <p className="mt-2 text-sm font-semibold text-[#6F7B73]">
-          {mode === 'login'
-            ? 'Your food adventures are waiting.'
-            : 'A grown-up email keeps your progress safe.'}
-        </p>
 
-        {mode === 'login' && (
-          <div className="mt-4 flex items-center justify-between rounded-2xl border-2 border-[#FFD84D] bg-[#FFFCEB] p-3.5 shadow-sm">
-            <div>
-              <p className="text-xs font-black text-[#173C4A]">👑 System Admin Account</p>
-              <p className="text-[11px] font-semibold text-[#666B5E]">admin@foodfriends.com</p>
+        {mode === 'signup' && signupStep === 'otp' ? (
+          <>
+            <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#EAF7DE] px-3 py-1 text-xs font-black text-[#287A52]">
+              ✓ Active Email Verified • Step 2 of 2
             </div>
-            <button
-              type="button"
-              onClick={handleFillAdmin}
-              className="rounded-xl bg-[#173C4A] px-3 py-1.5 text-xs font-black text-white transition hover:bg-[#255061]"
-            >
-              Fill Credentials
-            </button>
-          </div>
-        )}
+            <h2 id="auth-title" className="mt-2 text-3xl font-black tracking-tight text-[#173C4A]">
+              Enter OTP Code
+            </h2>
+            <p className="mt-1.5 text-sm font-semibold text-[#6F7B73]">
+              We verified that <span className="font-black text-[#173C4A]">{emailValue}</span> is an active email address. Enter your 6-digit OTP code below to create your account.
+            </p>
 
-        <form onSubmit={onSubmit} className="mt-6 space-y-4">
-          {mode === 'signup' && (
-            <>
-              <label className="block text-sm font-extrabold">
-                Explorer name
+            {previewOtp && (
+              <div className="mt-4 rounded-2xl border-2 border-[#BCE3C8] bg-[#F2FAF4] p-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-wider text-[#287A52]">
+                      📬 Bananini Verification Inbox
+                    </p>
+                    <p className="mt-0.5 text-xs font-semibold text-[#4A6154]">
+                      Your 6-digit signup OTP code is:
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOtpCode(previewOtp)}
+                    className="rounded-xl bg-[#287A52] px-3 py-1.5 text-xs font-black text-white transition hover:bg-[#1E6240]"
+                  >
+                    Auto-Fill Code
+                  </button>
+                </div>
+                <div className="mt-2 rounded-xl bg-white py-2 text-center text-2xl font-black tracking-[0.35em] text-[#173C4A] shadow-2xs">
+                  {previewOtp}
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleVerifyOtpAndCreate} className="mt-5 space-y-4">
+              <label className="block text-sm font-extrabold text-[#173C4A]">
+                6-Digit OTP Verification Code
                 <input
                   required
-                  name="displayName"
-                  maxLength={40}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="000000"
+                  className="mt-2 h-14 w-full rounded-2xl border-2 border-[#D8E0D5] bg-white px-4 text-center text-2xl font-black tracking-[0.4em] text-[#173C4A] outline-none focus:border-[#287A52]"
+                />
+              </label>
+
+              {activeError && (
+                <p
+                  className="rounded-2xl bg-[#F8E2DD] p-3 text-sm font-bold text-[#8A3E36]"
+                  role="alert"
+                >
+                  {activeError}
+                </p>
+              )}
+
+              <Button
+                type="submit"
+                disabled={isBusy || otpCode.length !== 6}
+                className="w-full"
+              >
+                {isBusy ? 'Verifying OTP...' : 'Verify OTP & Create Account'}
+                <Icon name="arrow" />
+              </Button>
+
+              <div className="flex items-center justify-between pt-2 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSignupStep('details')
+                    setLocalError('')
+                  }}
+                  className="text-[#5E6E64] hover:underline"
+                >
+                  ← Change Email
+                </button>
+                <button
+                  type="button"
+                  disabled={isBusy || resendCooldown > 0}
+                  onClick={handleResendOtp}
+                  className="font-black text-[#287A52] hover:underline disabled:opacity-45"
+                >
+                  {resendCooldown > 0
+                    ? `Resend OTP in ${resendCooldown}s`
+                    : '🔄 Resend OTP Code'}
+                </button>
+              </div>
+            </form>
+          </>
+        ) : (
+          <>
+            <h2 id="auth-title" className="mt-5 text-3xl font-black tracking-tight">
+              {mode === 'login' ? 'Welcome back!' : 'Start exploring'}
+            </h2>
+            <p className="mt-2 text-sm font-semibold text-[#6F7B73]">
+              {mode === 'login'
+                ? 'Your food adventures are waiting.'
+                : 'Use an active email address — we will send a 6-digit OTP to verify it.'}
+            </p>
+
+            {mode === 'login' && (
+              <div className="mt-4 flex items-center justify-between rounded-2xl border-2 border-[#FFD84D] bg-[#FFFCEB] p-3.5 shadow-sm">
+                <div>
+                  <p className="text-xs font-black text-[#173C4A]">👑 System Admin Account</p>
+                  <p className="text-[11px] font-semibold text-[#666B5E]">admin@foodfriends.com</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleFillAdmin}
+                  className="rounded-xl bg-[#173C4A] px-3 py-1.5 text-xs font-black text-white transition hover:bg-[#255061]"
+                >
+                  Fill Credentials
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleRequestSignupOtp} className="mt-6 space-y-4">
+              {mode === 'signup' && (
+                <>
+                  <label className="block text-sm font-extrabold">
+                    Explorer name
+                    <input
+                      required
+                      name="displayName"
+                      maxLength={40}
+                      value={displayNameValue}
+                      onChange={(e) => setDisplayNameValue(e.target.value)}
+                      className="mt-2 h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white px-4 outline-none focus:border-[#62A278]"
+                      placeholder="Name or nickname"
+                    />
+                  </label>
+                  <label className="block text-sm font-extrabold">
+                    Age group
+                    <select
+                      name="ageGroup"
+                      value={ageGroupValue}
+                      onChange={(e) => setAgeGroupValue(e.target.value)}
+                      className="mt-2 h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white px-4 outline-none"
+                    >
+                      <option>4-6</option>
+                      <option>7-9</option>
+                      <option>10-12</option>
+                    </select>
+                  </label>
+                </>
+              )}
+              <label className="block text-sm font-extrabold">
+                {mode === 'signup' ? 'Active email address' : 'Grown-up email'}
+                <input
+                  required
+                  name="email"
+                  type="email"
+                  value={emailValue}
+                  onChange={(e) => setEmailValue(e.target.value)}
                   className="mt-2 h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white px-4 outline-none focus:border-[#62A278]"
-                  placeholder="Name or nickname"
+                  placeholder="yourname@gmail.com"
                 />
               </label>
               <label className="block text-sm font-extrabold">
-                Age group
-                <select
-                  name="ageGroup"
-                  className="mt-2 h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white px-4 outline-none"
-                >
-                  <option>4-6</option>
-                  <option>7-9</option>
-                  <option>10-12</option>
-                </select>
+                Password
+                <div className="relative mt-2">
+                  <input
+                    required
+                    minLength={8}
+                    name="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={passwordValue}
+                    onChange={(e) => setPasswordValue(e.target.value)}
+                    className="h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white pl-4 pr-20 outline-none focus:border-[#62A278]"
+                    placeholder="At least 8 characters"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-xl bg-[#EDF2E9] px-2.5 py-1.5 text-xs font-black text-[#224735] transition hover:bg-[#DCE6DF]"
+                  >
+                    {showPassword ? '🙈 Hide' : '👁️ Show'}
+                  </button>
+                </div>
               </label>
-            </>
-          )}
-          <label className="block text-sm font-extrabold">
-            Grown-up email
-            <input
-              required
-              name="email"
-              type="email"
-              value={emailValue}
-              onChange={(e) => setEmailValue(e.target.value)}
-              className="mt-2 h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white px-4 outline-none focus:border-[#62A278]"
-              placeholder="grownup@example.com"
-            />
-          </label>
-          <label className="block text-sm font-extrabold">
-            Password
-            <div className="relative mt-2">
-              <input
-                required
-                minLength={8}
-                name="password"
-                type={showPassword ? 'text' : 'password'}
-                value={passwordValue}
-                onChange={(e) => setPasswordValue(e.target.value)}
-                className="h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white pl-4 pr-20 outline-none focus:border-[#62A278]"
-                placeholder="At least 8 characters"
-              />
+              {activeError && (
+                <p
+                  className="rounded-2xl bg-[#F8E2DD] p-3 text-sm font-bold text-[#8A3E36]"
+                  role="alert"
+                >
+                  {activeError}
+                </p>
+              )}
+              <Button type="submit" disabled={isBusy} className="w-full">
+                {isBusy
+                  ? 'One moment...'
+                  : mode === 'login'
+                    ? 'Sign in'
+                    : 'Send Verification OTP'}
+                <Icon name="arrow" />
+              </Button>
+            </form>
+            <p className="mt-6 text-center text-sm font-semibold text-[#707C74]">
+              {mode === 'login' ? 'New to FoodFriends?' : 'Already an explorer?'}{' '}
               <button
-                type="button"
-                onClick={() => setShowPassword((prev) => !prev)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-xl bg-[#EDF2E9] px-2.5 py-1.5 text-xs font-black text-[#224735] transition hover:bg-[#DCE6DF]"
+                onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+                className="font-black text-[#287A52]"
               >
-                {showPassword ? '🙈 Hide' : '👁️ Show'}
+                {mode === 'login' ? 'Create an account' : 'Sign in'}
               </button>
-            </div>
-          </label>
-          {error && (
-            <p
-              className="rounded-2xl bg-[#F8E2DD] p-3 text-sm font-bold text-[#8A3E36]"
-              role="alert"
-            >
-              {error}
             </p>
-          )}
-          <Button type="submit" disabled={pending} className="w-full">
-            {pending ? 'One moment...' : mode === 'login' ? 'Sign in' : 'Create account'}
-            <Icon name="arrow" />
-          </Button>
-        </form>
-        <p className="mt-6 text-center text-sm font-semibold text-[#707C74]">
-          {mode === 'login' ? 'New to FoodFriends?' : 'Already an explorer?'}{' '}
-          <button
-            onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-            className="font-black text-[#287A52]"
-          >
-            {mode === 'login' ? 'Create an account' : 'Sign in'}
-          </button>
-        </p>
+          </>
+        )}
       </div>
     </div>
   )

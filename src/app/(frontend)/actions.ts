@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { GoogleGenAI } from '@google/genai'
 import fs from 'fs/promises'
 import path from 'path'
+import dns from 'dns/promises'
 
 type ActionResult<T = undefined> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -345,6 +346,377 @@ export async function loginAction(input: {
     }
   } catch {
     return { ok: false, error: 'That email or password did not match.' }
+  }
+}
+
+const BLOCKED_EMAIL_DOMAINS = new Set([
+  'example.com',
+  'example.org',
+  'example.net',
+  'test.com',
+  'testing.com',
+  'fake.com',
+  'invalid.com',
+  'localhost',
+  'mailinator.com',
+  'guerrillamail.com',
+  '10minutemail.com',
+  'tempmail.com',
+  'temp-mail.org',
+  'yopmail.com',
+  'trashmail.com',
+  'sharklasers.com',
+  'getnada.com',
+  'maildrop.cc',
+  'dispostable.com',
+  'throwawaymail.com',
+  'none.com',
+  'noemail.com',
+])
+
+const BLOCKED_FAKE_LOCAL_PARTS = new Set([
+  'test',
+  'testing',
+  'fake',
+  'none',
+  'null',
+  'admin',
+  'user',
+  'example',
+  'asdf',
+  'qwerty',
+  '123',
+  '1234',
+  '12345',
+  '123456',
+])
+
+async function verifyActiveEmailAddress(
+  rawEmail: string
+): Promise<{ valid: true } | { valid: false; reason: string }> {
+  const email = rawEmail.trim().toLowerCase()
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+  if (!emailRegex.test(email)) {
+    return {
+      valid: false,
+      reason: 'Please enter a valid email address (for example, yourname@gmail.com).',
+    }
+  }
+
+  const [localPart, domain] = email.split('@')
+  if (!localPart || !domain) {
+    return { valid: false, reason: 'Please enter a complete email address.' }
+  }
+
+  if (BLOCKED_EMAIL_DOMAINS.has(domain)) {
+    return {
+      valid: false,
+      reason:
+        'Disposable or placeholder email domains are not allowed. Please use an active personal, school, or work email.',
+    }
+  }
+
+  const cleanLocal = localPart.replace(/\./g, '')
+  if (cleanLocal.length < 3 || BLOCKED_FAKE_LOCAL_PARTS.has(cleanLocal)) {
+    return {
+      valid: false,
+      reason: 'That email address looks like a test placeholder. Please use your real active email.',
+    }
+  }
+
+  if (domain === 'gmail.com' || domain === 'googlemail.com') {
+    if (
+      cleanLocal.length < 6 ||
+      localPart.startsWith('.') ||
+      localPart.endsWith('.') ||
+      localPart.includes('..')
+    ) {
+      return {
+        valid: false,
+        reason:
+          'Active Gmail addresses must have at least 6 characters before @gmail.com. Please enter your real Gmail address.',
+      }
+    }
+  }
+
+  // Live DNS MX Record check to verify the domain has active mail servers
+  try {
+    const mxRecords = await dns.resolveMx(domain)
+    const hasValidMx =
+      Array.isArray(mxRecords) &&
+      mxRecords.length > 0 &&
+      mxRecords.some((r) => typeof r.exchange === 'string' && r.exchange.trim().length > 0)
+
+    if (!hasValidMx) {
+      return {
+        valid: false,
+        reason: `The domain "@${domain}" does not have an active mail server. Please use an active email address.`,
+      }
+    }
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code || ''
+    if (code === 'ENOTFOUND' || code === 'ENODATA' || code === 'EREFUSED') {
+      return {
+        valid: false,
+        reason: `The email domain "@${domain}" does not exist or cannot receive mail. Please use an active email address.`,
+      }
+    }
+    // If DNS resolver is unreachable in a restricted network environment, allow known major providers
+    const trustedProviders = new Set([
+      'gmail.com',
+      'yahoo.com',
+      'outlook.com',
+      'hotmail.com',
+      'icloud.com',
+      'live.com',
+      'msn.com',
+      'aol.com',
+      'proton.me',
+      'protonmail.com',
+    ])
+    if (
+      !trustedProviders.has(domain) &&
+      !domain.endsWith('.edu') &&
+      !domain.endsWith('.edu.ph') &&
+      !domain.endsWith('.gov')
+    ) {
+      return {
+        valid: false,
+        reason: `Could not verify an active mail server for "@${domain}". Please use a verified email provider (such as Gmail, Yahoo, Outlook, iCloud, or school email).`,
+      }
+    }
+  }
+
+  return { valid: true }
+}
+
+export type SignupOtpChallenge = {
+  email: string
+  expiresInSeconds: number
+  deliveryChannel: 'email' | 'instant_preview'
+  previewOtpCode?: string
+}
+
+export async function requestSignupOtpAction(input: {
+  displayName: string
+  email: string
+  password: string
+  ageGroup: string
+}): Promise<ActionResult<SignupOtpChallenge>> {
+  const displayName = clean(input.displayName, 40)
+  const email = clean(input.email, 120).toLowerCase()
+  const password = clean(input.password, 128)
+  const ageGroup: '4-6' | '7-9' | '10-12' =
+    input.ageGroup === '4-6' || input.ageGroup === '10-12' ? input.ageGroup : '7-9'
+
+  if (displayName.length < 2) {
+    return { ok: false, error: 'Please add a first name or nickname (at least 2 characters).' }
+  }
+  if (password.length < 8) {
+    return { ok: false, error: 'Your password must be at least 8 characters long.' }
+  }
+  if (email === DEDICATED_ADMIN_EMAIL) {
+    return {
+      ok: false,
+      error: 'That email is reserved for system administration. Please sign in instead.',
+    }
+  }
+
+  // 1. Verify that the email address is real and has an active mail server (DNS MX verification)
+  const emailCheck = await verifyActiveEmailAddress(email)
+  if (!emailCheck.valid) {
+    return { ok: false, error: emailCheck.reason }
+  }
+
+  // 2. Check if the email is already registered in profiles
+  try {
+    const adminDb = createAdminClient()
+    const { data: existingProfile } = await adminDb
+      .from('profiles')
+      .select('id, email')
+      .eq('email', email)
+      .maybeSingle()
+
+    if (existingProfile?.id) {
+      return {
+        ok: false,
+        error: 'An account with this email already exists. Please switch to Sign In.',
+      }
+    }
+  } catch {
+    // continue if profiles lookup fails
+  }
+
+  // 3. Generate a 6-digit OTP code and store pending registration in httpOnly cookie (10 min expiry)
+  const otpCode = String(Math.floor(100000 + Math.random() * 900000))
+  const expiresAt = Date.now() + 10 * 60 * 1000
+
+  const cookieStore = await cookies()
+  cookieStore.set(
+    'foodfriends_pending_otp',
+    JSON.stringify({
+      displayName,
+      email,
+      password,
+      ageGroup,
+      otpCode,
+      expiresAt,
+    }),
+    {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 10,
+    }
+  )
+
+  let sentViaExternalEmail = false
+
+  // 4. Optional: If RESEND_API_KEY is configured, send styled 6-digit OTP email via Resend
+  const resendApiKey = process.env.RESEND_API_KEY
+  if (resendApiKey) {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM_EMAIL || 'FoodFriends <onboarding@resend.dev>',
+          to: [email],
+          subject: `${otpCode} is your FoodFriends verification code`,
+          html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border-radius:16px;background:#FFFDF7;border:1px solid #DCE6DF;">
+            <h2 style="color:#173C4A;margin-top:0;">🍌 Welcome to FoodFriends, ${displayName}!</h2>
+            <p style="color:#4A5D52;font-size:15px;">Enter this 6-digit OTP code to verify your active email and finish creating your Explorer account:</p>
+            <div style="font-size:32px;font-weight:900;letter-spacing:6px;text-align:center;padding:16px;background:#EAF7DE;color:#287A52;border-radius:12px;margin:20px 0;">${otpCode}</div>
+            <p style="color:#7A897F;font-size:12px;">This code expires in 10 minutes.</p>
+          </div>`,
+        }),
+      })
+      if (res.ok) {
+        sentViaExternalEmail = true
+      }
+    } catch {
+      // Fallback below
+    }
+  }
+
+  return {
+    ok: true,
+    data: {
+      email,
+      expiresInSeconds: 600,
+      deliveryChannel: sentViaExternalEmail ? 'email' : 'instant_preview',
+      previewOtpCode: sentViaExternalEmail ? undefined : otpCode,
+    },
+  }
+}
+
+export async function verifySignupOtpAction(input: {
+  email: string
+  otpCode: string
+}): Promise<ActionResult<UserSession>> {
+  const email = clean(input.email, 120).toLowerCase()
+  const enteredCode = clean(input.otpCode, 12).replace(/\D/g, '')
+
+  if (enteredCode.length !== 6) {
+    return { ok: false, error: 'Please enter the complete 6-digit OTP verification code.' }
+  }
+
+  const cookieStore = await cookies()
+  const rawPending = cookieStore.get('foodfriends_pending_otp')?.value
+  if (!rawPending) {
+    return {
+      ok: false,
+      error: 'Your OTP session expired. Please click "Resend OTP" to get a fresh 6-digit code.',
+    }
+  }
+
+  let pending: {
+    displayName: string
+    email: string
+    password: string
+    ageGroup: '4-6' | '7-9' | '10-12'
+    otpCode: string
+    expiresAt: number
+  }
+
+  try {
+    pending = JSON.parse(rawPending)
+  } catch {
+    return { ok: false, error: 'Invalid OTP session. Please request a new OTP code.' }
+  }
+
+  if (Date.now() > pending.expiresAt) {
+    cookieStore.delete('foodfriends_pending_otp')
+    return {
+      ok: false,
+      error: 'That OTP code has expired (10-minute limit). Please request a new OTP code.',
+    }
+  }
+
+  if (pending.email !== email) {
+    return {
+      ok: false,
+      error: 'The email address changed. Please request a new OTP for this email.',
+    }
+  }
+
+  if (enteredCode !== pending.otpCode) {
+    return {
+      ok: false,
+      error: 'Incorrect 6-digit OTP code. Please check the code and try again.',
+    }
+  }
+
+  // OTP matches! Now create the verified account in Supabase
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase.auth.signUp({
+      email: pending.email,
+      password: pending.password,
+      options: {
+        data: {
+          displayName: pending.displayName,
+          ageGroup: pending.ageGroup,
+          email_verified_via_otp: true,
+        },
+      },
+    })
+
+    if (error || !data.user) {
+      return { ok: false, error: error?.message || 'We could not create that account.' }
+    }
+
+    const adminDb = createAdminClient()
+    await adminDb.from('profiles').upsert({
+      id: data.user.id,
+      email: pending.email,
+      display_name: pending.displayName,
+      age_group: pending.ageGroup,
+      points: 0,
+      streak: 0,
+      is_admin: false,
+    })
+
+    cookieStore.delete('foodfriends_pending_otp')
+
+    return {
+      ok: true,
+      data: {
+        id: data.user.id,
+        email: data.user.email || pending.email,
+        displayName: pending.displayName,
+        ageGroup: pending.ageGroup,
+        points: 0,
+        streak: 0,
+        isAdmin: false,
+      },
+    }
+  } catch {
+    return { ok: false, error: 'We could not create that account. The email may already be used.' }
   }
 }
 

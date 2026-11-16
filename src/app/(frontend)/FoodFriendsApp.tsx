@@ -16,6 +16,7 @@ import {
   analyzeFoodAction,
   askBananiniAction,
   deleteUserFoodLogAction,
+  exchangeEmailCodeAction,
   generateAiQuizQuestionAction,
   getBrainBitesDataAction,
   getFoodLogsAction,
@@ -547,8 +548,25 @@ export default function FoodFriendsApp({
     },
   ])
 
-  // Restore scan & chat state from sessionStorage on client mount
+  // Restore scan & chat state from sessionStorage on client mount, and handle 1-click email verification (?code=...)
   useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const emailAuthCode = params.get('code')
+      if (emailAuthCode) {
+        window.history.replaceState({}, '', window.location.pathname)
+        exchangeEmailCodeAction(emailAuthCode).then((res) => {
+          if (res.ok && res.data) {
+            setUser(res.data)
+            setAuthOpen(false)
+            persistActiveView('profile')
+          }
+        })
+      }
+    } catch {
+      // ignore URL parse error
+    }
+
     try {
       const savedScanRaw = sessionStorage.getItem('foodfriends_persisted_scan')
       if (savedScanRaw) {
@@ -5312,6 +5330,18 @@ function AuthModal({
     return () => window.clearInterval(timer)
   }, [resendCooldown])
 
+  // Auto-detect if user clicked "Sign in" in their Gmail verification email in another tab
+  useEffect(() => {
+    if (mode !== 'signup' || signupStep !== 'otp') return
+    const poll = window.setInterval(async () => {
+      const res = await sessionAction()
+      if (res.ok && res.data) {
+        onAuthSuccess(res.data)
+      }
+    }, 3000)
+    return () => window.clearInterval(poll)
+  }, [mode, signupStep, onAuthSuccess])
+
   const handleFillAdmin = () => {
     setEmailValue('admin@foodfriends.com')
     setPasswordValue('admin123456')
@@ -5333,6 +5363,7 @@ function AuthModal({
         ageGroup: ageGroupValue,
         email: emailValue,
         password: passwordValue,
+        redirectOrigin: typeof window !== 'undefined' ? window.location.origin : undefined,
       })
 
       if (res.ok) {
@@ -5420,10 +5451,13 @@ function AuthModal({
             </h2>
             <p className="mt-1.5 text-sm font-semibold text-[#6F7B73]">
               We sent a verification email to{' '}
-              <span className="font-black text-[#173C4A]">{emailValue}</span>. Enter the{' '}
-              <span className="font-black text-[#173C4A]">OTP code</span> from your email, or
-              right-click <span className="font-black text-[#287A52]">&ldquo;Sign in&rdquo; → Copy link address</span> in the email and paste it below:
+              <span className="font-black text-[#173C4A]">{emailValue}</span>!
             </p>
+            <div className="mt-3 rounded-2xl border border-[#BCE3C8] bg-[#F2FAF4] p-3 text-xs font-bold text-[#1E6939]">
+              ✨ <span className="font-black">Easiest Way:</span> Simply open your email and click{' '}
+              <span className="underline">Sign in</span> — or right-click{' '}
+              <span className="font-black">&ldquo;Sign in&rdquo; → Copy link address</span> and paste it below!
+            </div>
 
             <form onSubmit={handleVerifyOtpAndCreate} className="mt-5 space-y-4">
               <label className="block text-sm font-extrabold text-[#173C4A]">

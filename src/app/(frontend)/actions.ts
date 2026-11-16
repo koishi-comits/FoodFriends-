@@ -500,6 +500,7 @@ export async function requestSignupOtpAction(input: {
   email: string
   password: string
   ageGroup: string
+  redirectOrigin?: string
 }): Promise<ActionResult<SignupOtpChallenge>> {
   const displayName = clean(input.displayName, 40)
   const email = clean(input.email, 120).toLowerCase()
@@ -582,10 +583,12 @@ export async function requestSignupOtpAction(input: {
   if (!sentViaResend) {
     try {
       const supabase = await createClient()
+      const cleanOrigin = clean(input.redirectOrigin, 200) || 'http://localhost:3000'
       const { error: otpError } = await supabase.auth.signInWithOtp({
         email,
         options: {
           shouldCreateUser: true,
+          emailRedirectTo: cleanOrigin,
           data: {
             displayName,
             ageGroup,
@@ -886,6 +889,75 @@ export async function verifySignupOtpAction(input: {
       streak: 0,
       isAdmin: false,
     },
+  }
+}
+
+export async function exchangeEmailCodeAction(
+  code: string
+): Promise<ActionResult<UserSession | null>> {
+  try {
+    const cleanCode = clean(code, 300)
+    if (!cleanCode) return { ok: true, data: null }
+
+    const supabase = await createClient()
+    const { data, error } = await supabase.auth.exchangeCodeForSession(cleanCode)
+    if (error || !data?.user) {
+      return { ok: false, error: error?.message || 'Could not verify email link.' }
+    }
+
+    const user = data.user
+    const cookieStore = await cookies()
+    const rawPending = cookieStore.get('foodfriends_pending_otp')?.value
+
+    let displayName = String(user.user_metadata?.displayName || 'Explorer')
+    let ageGroup = String(user.user_metadata?.ageGroup || '7-9')
+
+    if (rawPending) {
+      try {
+        const pending = JSON.parse(rawPending)
+        if (pending.displayName) displayName = String(pending.displayName)
+        if (pending.ageGroup) ageGroup = String(pending.ageGroup)
+        if (pending.password) {
+          await supabase.auth.updateUser({
+            password: String(pending.password),
+            data: {
+              displayName,
+              ageGroup,
+              email_verified_via_otp: true,
+            },
+          })
+        }
+      } catch {
+        // ignore cookie parse error
+      }
+      cookieStore.delete('foodfriends_pending_otp')
+    }
+
+    const adminDb = createAdminClient()
+    await adminDb.from('profiles').upsert({
+      id: user.id,
+      email: user.email || '',
+      display_name: displayName,
+      age_group: ageGroup,
+      points: 0,
+      streak: 0,
+      is_admin: false,
+    })
+
+    return {
+      ok: true,
+      data: {
+        id: user.id,
+        email: user.email || '',
+        displayName,
+        ageGroup,
+        points: 0,
+        streak: 0,
+        isAdmin: false,
+      },
+    }
+  } catch {
+    return { ok: false, error: 'Could not complete email verification.' }
   }
 }
 

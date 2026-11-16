@@ -17,6 +17,7 @@ import {
   askBananiniAction,
   deleteUserFoodLogAction,
   exchangeEmailCodeAction,
+  finalizeEmailHashSessionAction,
   generateAiQuizQuestionAction,
   getBrainBitesDataAction,
   getFoodLogsAction,
@@ -548,9 +549,26 @@ export default function FoodFriendsApp({
     },
   ])
 
-  // Restore scan & chat state from sessionStorage on client mount, and handle 1-click email verification (?code=...)
+  // Restore scan & chat state from sessionStorage on client mount, and handle 1-click email verification (?code=... or #access_token=...)
   useEffect(() => {
     try {
+      const hash = window.location.hash
+      if (hash && hash.includes('access_token=')) {
+        const hashParams = new URLSearchParams(hash.replace(/^#/, ''))
+        const accessToken = hashParams.get('access_token')
+        const refreshToken = hashParams.get('refresh_token')
+        if (accessToken && refreshToken) {
+          window.history.replaceState({}, '', window.location.pathname)
+          finalizeEmailHashSessionAction({ accessToken, refreshToken }).then((res) => {
+            if (res.ok && res.data) {
+              setUser(res.data)
+              setAuthOpen(false)
+              persistActiveView('profile')
+            }
+          })
+        }
+      }
+
       const params = new URLSearchParams(window.location.search)
       const emailAuthCode = params.get('code')
       if (emailAuthCode) {
@@ -5388,6 +5406,7 @@ function AuthModal({
         ageGroup: ageGroupValue,
         email: emailValue,
         password: passwordValue,
+        redirectOrigin: typeof window !== 'undefined' ? window.location.origin : undefined,
       })
       if (res.ok) {
         setOtpCode('')
@@ -5466,19 +5485,9 @@ function AuthModal({
                   required
                   type="text"
                   value={otpCode}
-                  onChange={(e) => {
-                    const val = e.target.value.trim()
-                    if (val.includes('token=')) {
-                      const match = val.match(/[?&]token=([^&#\s]+)/)
-                      if (match?.[1]) {
-                        setOtpCode(decodeURIComponent(match[1]))
-                        return
-                      }
-                    }
-                    setOtpCode(val)
-                  }}
-                  placeholder="Enter 6-digit OTP or paste Sign-in link"
-                  className="mt-2 h-14 w-full rounded-2xl border-2 border-[#D8E0D5] bg-white px-4 text-center text-base font-black text-[#173C4A] outline-none focus:border-[#287A52]"
+                  onChange={(e) => setOtpCode(e.target.value.trim())}
+                  placeholder="Enter 6-digit OTP or paste full Sign-in link"
+                  className="mt-2 h-14 w-full rounded-2xl border-2 border-[#D8E0D5] bg-white px-4 text-center text-sm font-black text-[#173C4A] outline-none focus:border-[#287A52]"
                 />
               </label>
 

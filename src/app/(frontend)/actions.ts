@@ -582,9 +582,11 @@ export async function requestSignupOtpAction(input: {
 
   if (!sentViaResend) {
     try {
-      const supabase = await createClient()
+      // Use non-PKCE (implicit flow) client so the email verification link returns access_token/refresh_token directly
+      // whether the user clicks "Sign in" in Gmail OR pastes the link into the verification box!
+      const implicitSupabase = createAdminClient()
       const cleanOrigin = clean(input.redirectOrigin, 200) || 'http://localhost:3000'
-      const { error: otpError } = await supabase.auth.signInWithOtp({
+      const { error: otpError } = await implicitSupabase.auth.signInWithOtp({
         email,
         options: {
           shouldCreateUser: true,
@@ -645,20 +647,34 @@ export async function verifySignupOtpAction(input: {
   otpCode: string
 }): Promise<ActionResult<UserSession>> {
   const email = clean(input.email, 120).toLowerCase()
-  const rawInput = clean(input.otpCode, 600)
+  const rawInput = clean(input.otpCode, 1000)
   const digitsOnly = rawInput.replace(/\D/g, '')
 
-  // Extract token if user pasted the verification link or pkce_ token from Supabase's email
+  // Check if user pasted a full verification URL or a pkce_ token from Supabase's email
   let extractedTokenHash: string | null = null
-  if (rawInput.includes('token=')) {
+  let extractedLinkType: string | null = null
+  let fullVerifyUrl: string | null = null
+
+  if (rawInput.startsWith('http://') || rawInput.startsWith('https://')) {
     try {
       const urlObj = new URL(rawInput)
       extractedTokenHash =
         urlObj.searchParams.get('token') || urlObj.searchParams.get('token_hash')
+      extractedLinkType = urlObj.searchParams.get('type')
+      if (rawInput.includes('/auth/v1/verify')) {
+        fullVerifyUrl = rawInput
+      }
     } catch {
       const match = rawInput.match(/[?&]token=([^&#\s]+)/)
       if (match?.[1]) extractedTokenHash = decodeURIComponent(match[1])
+      const typeMatch = rawInput.match(/[?&]type=([^&#\s]+)/)
+      if (typeMatch?.[1]) extractedLinkType = decodeURIComponent(typeMatch[1])
     }
+  } else if (rawInput.includes('token=')) {
+    const match = rawInput.match(/[?&]token=([^&#\s]+)/)
+    if (match?.[1]) extractedTokenHash = decodeURIComponent(match[1])
+    const typeMatch = rawInput.match(/[?&]type=([^&#\s]+)/)
+    if (typeMatch?.[1]) extractedLinkType = decodeURIComponent(typeMatch[1])
   } else if (rawInput.startsWith('pkce_') || rawInput.length > 20) {
     extractedTokenHash = rawInput.trim()
   }
@@ -667,7 +683,7 @@ export async function verifySignupOtpAction(input: {
     return {
       ok: false,
       error:
-        'Please enter the 6-digit OTP code (or paste the Sign-in verification link) from your email.',
+        'Please enter the 6-digit OTP code or paste the Sign-in link from your email.',
     }
   }
 
@@ -767,44 +783,74 @@ export async function verifySignupOtpAction(input: {
     }
   }
 
-  // Path B: Verify numeric OTP or token_hash sent by Supabase Auth to the user's email inbox
+  // Path B: Verify link token (pkce_...) or numeric OTP sent by Supabase Auth
   let verifiedUserId: string | null = null
   let verifiedUserEmail: string = pending.email
-
-  const otpTypesToTry: Array<'email' | 'signup' | 'magiclink'> = ['email', 'signup', 'magiclink']
   let lastVerifyError = ''
 
   if (extractedTokenHash) {
-    // 1. Try verifying token_hash directly via Supabase SDK
-    for (const otpType of ['magiclink', 'email', 'signup'] as const) {
-      const { data, error } = await supabase.auth.verifyOtp({
-        token_hash: extractedTokenHash,
-        type: otpType,
-      })
-      if (!error && data?.user) {
-        verifiedUserId = data.user.id
-        verifiedUserEmail = data.user.email || pending.email
-        break
-      }
-      if (error) lastVerifyError = error.message
-    }
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/^["']|["']$/g, '').trim() ||
+      'https://xmmmkqnrzlpomapeyzds.supabase.co'
 
-    // 2. If token_hash uses pkce_ format from Supabase's /auth/v1/verify link, verify against Supabase's verify endpoint
-    if (!verifiedUserId) {
+    // IMPORTANT: Do NOT call verifyOtp({ token_hash }) first on pkce_ tokens because PKCE tokens
+    // must be verified via GET /auth/v1/verify and are single-use!
+    const candidateTypes = extractedLinkType
+      ? [extractedLinkType]
+      : ['signup', 'magiclink', 'email']
+
+    for (const linkType of candidateTypes) {
       try {
-        const supabaseUrl =
-          process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/^["']|["']$/g, '').trim() ||
-          'https://xmmmkqnrzlpomapeyzds.supabase.co'
-        const verifyEndpoint = `${supabaseUrl}/auth/v1/verify?token=${encodeURIComponent(
-          extractedTokenHash
-        )}&type=magiclink`
-        const verifyRes = await fetch(verifyEndpoint, { redirect: 'manual' })
+        const targetUrl =
+          fullVerifyUrl && extractedLinkType === linkType
+            ? fullVerifyUrl
+            : `${supabaseUrl}/auth/v1/verify?token=${encodeURIComponent(
+                extractedTokenHash
+              )}&type=${encodeURIComponent(linkType)}`
+
+        const verifyRes = await fetch(targetUrl, { redirect: 'manual' })
         const redirectLoc = verifyRes.headers.get('location') || ''
+
         if (
           (verifyRes.status === 302 || verifyRes.status === 303 || verifyRes.status === 200) &&
+          redirectLoc &&
           !redirectLoc.includes('error=')
         ) {
-          // Token was valid and verified by Supabase! Now set password or sign in
+          // 1. Check if redirect Location header contains #access_token=...&refresh_token=... (Implicit Flow)
+          const accessMatch = redirectLoc.match(/[?#&]access_token=([^&#\s]+)/)
+          const refreshMatch = redirectLoc.match(/[?#&]refresh_token=([^&#\s]+)/)
+          if (accessMatch?.[1] && refreshMatch?.[1]) {
+            const { data: sessionData } = await supabase.auth.setSession({
+              access_token: decodeURIComponent(accessMatch[1]),
+              refresh_token: decodeURIComponent(refreshMatch[1]),
+            })
+            if (sessionData?.user) {
+              verifiedUserId = sessionData.user.id
+              verifiedUserEmail = sessionData.user.email || pending.email
+              break
+            }
+          }
+
+          // 2. Check if redirect Location header contains ?code=... (PKCE Flow)
+          let authCode: string | null = null
+          try {
+            const locUrl = new URL(redirectLoc, 'http://localhost:3000')
+            authCode = locUrl.searchParams.get('code')
+          } catch {
+            const codeMatch = redirectLoc.match(/[?&]code=([^&#\s]+)/)
+            if (codeMatch?.[1]) authCode = decodeURIComponent(codeMatch[1])
+          }
+
+          if (authCode) {
+            const { data: exchData } = await supabase.auth.exchangeCodeForSession(authCode)
+            if (exchData?.user) {
+              verifiedUserId = exchData.user.id
+              verifiedUserEmail = exchData.user.email || pending.email
+              break
+            }
+          }
+
+          // 3. If token was verified by Supabase without error, complete account creation
           const { data: signUpData } = await supabase.auth.signUp({
             email: pending.email,
             password: pending.password,
@@ -819,14 +865,49 @@ export async function verifySignupOtpAction(input: {
           if (signUpData?.user) {
             verifiedUserId = signUpData.user.id
             verifiedUserEmail = signUpData.user.email || pending.email
+            break
+          }
+
+          const { data: existingProf } = await adminDb
+            .from('profiles')
+            .select('id')
+            .eq('email', pending.email)
+            .maybeSingle()
+          if (existingProf?.id) {
+            verifiedUserId = String(existingProf.id)
+            break
+          }
+
+          verifiedUserId = crypto.randomUUID()
+          break
+        } else if (redirectLoc.includes('error_description=')) {
+          const descMatch = redirectLoc.match(/error_description=([^&#]+)/)
+          if (descMatch?.[1]) {
+            lastVerifyError = decodeURIComponent(descMatch[1].replace(/\+/g, ' '))
           }
         }
       } catch {
-        // continue
+        // try next candidate type
+      }
+    }
+
+    // If GET /auth/v1/verify didn't match, try SDK verifyOtp as last resort
+    if (!verifiedUserId) {
+      for (const otpType of ['signup', 'magiclink', 'email'] as const) {
+        const { data, error } = await supabase.auth.verifyOtp({
+          token_hash: extractedTokenHash,
+          type: otpType,
+        })
+        if (!error && data?.user) {
+          verifiedUserId = data.user.id
+          verifiedUserEmail = data.user.email || pending.email
+          break
+        }
+        if (error) lastVerifyError = error.message
       }
     }
   } else {
-    for (const otpType of otpTypesToTry) {
+    for (const otpType of ['email', 'signup', 'magiclink'] as const) {
       const { data, error } = await supabase.auth.verifyOtp({
         email: pending.email,
         token: digitsOnly,
@@ -848,7 +929,7 @@ export async function verifySignupOtpAction(input: {
       ok: false,
       error:
         lastVerifyError ||
-        'Incorrect or expired verification code/link. Please check your email inbox and try again.',
+        'That email link or code was already used or expired. Click "Resend OTP Code" below for a fresh email!',
     }
   }
 
@@ -889,6 +970,76 @@ export async function verifySignupOtpAction(input: {
       streak: 0,
       isAdmin: false,
     },
+  }
+}
+
+export async function finalizeEmailHashSessionAction(input: {
+  accessToken: string
+  refreshToken: string
+}): Promise<ActionResult<UserSession | null>> {
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase.auth.setSession({
+      access_token: input.accessToken,
+      refresh_token: input.refreshToken,
+    })
+    if (error || !data?.user) {
+      return { ok: false, error: error?.message || 'Could not establish session.' }
+    }
+
+    const user = data.user
+    const cookieStore = await cookies()
+    const rawPending = cookieStore.get('foodfriends_pending_otp')?.value
+
+    let displayName = String(user.user_metadata?.displayName || 'Explorer')
+    let ageGroup = String(user.user_metadata?.ageGroup || '7-9')
+
+    if (rawPending) {
+      try {
+        const pending = JSON.parse(rawPending)
+        if (pending.displayName) displayName = String(pending.displayName)
+        if (pending.ageGroup) ageGroup = String(pending.ageGroup)
+        if (pending.password) {
+          await supabase.auth.updateUser({
+            password: String(pending.password),
+            data: {
+              displayName,
+              ageGroup,
+              email_verified_via_otp: true,
+            },
+          })
+        }
+      } catch {
+        // ignore cookie parse error
+      }
+      cookieStore.delete('foodfriends_pending_otp')
+    }
+
+    const adminDb = createAdminClient()
+    await adminDb.from('profiles').upsert({
+      id: user.id,
+      email: user.email || '',
+      display_name: displayName,
+      age_group: ageGroup,
+      points: 0,
+      streak: 0,
+      is_admin: false,
+    })
+
+    return {
+      ok: true,
+      data: {
+        id: user.id,
+        email: user.email || '',
+        displayName,
+        ageGroup,
+        points: 0,
+        streak: 0,
+        isAdmin: false,
+      },
+    }
+  } catch {
+    return { ok: false, error: 'Could not complete email verification.' }
   }
 }
 

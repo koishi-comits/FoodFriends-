@@ -1104,7 +1104,7 @@ export async function verifySignupOtpAction(input: {
     // ignore if password update is handled separately
   }
 
-  await adminDb.from('profiles').upsert({
+  const profileRow = {
     id: verifiedUserId,
     email: verifiedUserEmail,
     display_name: pending.displayName,
@@ -1112,7 +1112,9 @@ export async function verifySignupOtpAction(input: {
     points: 0,
     streak: 0,
     is_admin: false,
-  })
+  }
+  await supabase.from('profiles').upsert(profileRow)
+  await adminDb.from('profiles').upsert(profileRow)
 
   await saveUserPasswordToVault(verifiedUserEmail, pending.password)
   await setVerifiedUserCookie({
@@ -1164,20 +1166,6 @@ export async function requestPasswordResetAction(input: {
     return { ok: false, error: emailCheck.reason }
   }
 
-  const adminDb = createAdminClient()
-  const { data: existingProfile } = await adminDb
-    .from('profiles')
-    .select('id, email, display_name')
-    .eq('email', email)
-    .maybeSingle()
-
-  if (!existingProfile?.id) {
-    return {
-      ok: false,
-      error: 'No explorer account was found with that email address. Please create an account first.',
-    }
-  }
-
   const customOtpCode = String(Math.floor(100000 + Math.random() * 900000))
   const expiresAt = Date.now() + 10 * 60 * 1000
   let sentViaResend = false
@@ -1194,9 +1182,9 @@ export async function requestPasswordResetAction(input: {
         body: JSON.stringify({
           from: process.env.RESEND_FROM_EMAIL || 'FoodFriends <onboarding@resend.dev>',
           to: [email],
-          subject: `${customOtpCode} is your FoodFriends password reset code`,
+          subject: `${customOtpCode} is your FoodFriends verification code`,
           html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border-radius:16px;background:#FFFDF7;border:1px solid #DCE6DF;">
-            <h2 style="color:#173C4A;margin-top:0;">🔐 FoodFriends Password Reset</h2>
+            <h2 style="color:#173C4A;margin-top:0;">🍌 FoodFriends Password Verification</h2>
             <p style="color:#4A5D52;font-size:15px;">Enter this 6-digit OTP code in FoodFriends to confirm your new password:</p>
             <div style="font-size:32px;font-weight:900;letter-spacing:6px;text-align:center;padding:16px;background:#EAF7DE;color:#287A52;border-radius:12px;margin:20px 0;">${customOtpCode}</div>
             <p style="color:#7A897F;font-size:12px;">This code expires in 10 minutes.</p>
@@ -1211,34 +1199,29 @@ export async function requestPasswordResetAction(input: {
     }
   }
 
+  // Use the exact same signInWithOtp email verification mechanism as Sign Up!
   if (!sentViaResend) {
     try {
       const implicitSupabase = createAdminClient()
       const cleanOrigin = clean(input.redirectOrigin, 200) || 'http://localhost:3000'
-      const { error: resetError } = await implicitSupabase.auth.resetPasswordForEmail(email, {
-        redirectTo: cleanOrigin,
+      const { error: otpError } = await implicitSupabase.auth.signInWithOtp({
+        email,
+        options: {
+          shouldCreateUser: true,
+          emailRedirectTo: cleanOrigin,
+        },
       })
 
-      if (resetError) {
-        // Fallback to signInWithOtp if recovery template is rate-limited
-        const { error: otpError } = await implicitSupabase.auth.signInWithOtp({
-          email,
-          options: {
-            shouldCreateUser: false,
-            emailRedirectTo: cleanOrigin,
-          },
-        })
-        if (otpError) {
-          return {
-            ok: false,
-            error: `Could not send reset email to ${email}: ${otpError.message}`,
-          }
+      if (otpError) {
+        return {
+          ok: false,
+          error: `Could not send verification email to ${email}: ${otpError.message}`,
         }
       }
     } catch {
       return {
         ok: false,
-        error: 'Could not dispatch the password reset email right now. Please try again shortly.',
+        error: 'Could not dispatch the verification email right now. Please try again shortly.',
       }
     }
   }
@@ -1455,16 +1438,37 @@ export async function verifyPasswordResetAction(input: {
   await supabase.auth.updateUser({ password: pending.newPassword }).catch(() => {})
   await saveUserPasswordToVault(pending.email, pending.newPassword)
 
+  const {
+    data: { user: activeAuthUser },
+  } = await supabase.auth.getUser()
+
   const { data: profile } = await adminDb
     .from('profiles')
     .select('*')
     .eq('email', pending.email)
     .maybeSingle()
 
-  const userId = String(profile?.id || crypto.randomUUID())
-  const displayName = String(profile?.display_name || 'Explorer')
-  const ageGroup = String(profile?.age_group || '7-9')
+  const userId = String(activeAuthUser?.id || profile?.id || crypto.randomUUID())
+  const displayName = String(
+    profile?.display_name || activeAuthUser?.user_metadata?.displayName || 'Explorer'
+  )
+  const ageGroup = String(
+    profile?.age_group || activeAuthUser?.user_metadata?.ageGroup || '7-9'
+  )
   const isAdmin = Boolean(profile?.is_admin)
+
+  const profileRow = {
+    id: userId,
+    email: pending.email,
+    display_name: displayName,
+    age_group: ageGroup,
+    points: profile?.points ?? 0,
+    streak: profile?.streak ?? 0,
+    is_admin: isAdmin,
+  }
+  await supabase.from('profiles').upsert(profileRow)
+  await adminDb.from('profiles').upsert(profileRow)
+
   const accurateStats = await fetchAccurateUserStats(userId)
 
   await setVerifiedUserCookie({

@@ -5534,30 +5534,30 @@ function AuthModal({
           forgotStep === 'otp' ? (
             <>
               <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#EAF7DE] px-3 py-1 text-xs font-black text-[#287A52]">
-                🔐 Reset Email Sent • Step 2 of 2
+                📧 OTP Sent to Your Email • Step 2 of 2
               </div>
               <h2 id="auth-title" className="mt-2 text-3xl font-black tracking-tight text-[#173C4A]">
-                Verify Password Reset
+                Check Your Email
               </h2>
               <p className="mt-1.5 text-sm font-semibold text-[#6F7B73]">
-                We sent a password reset verification email to{' '}
+                We sent a verification email to{' '}
                 <span className="font-black text-[#173C4A]">{emailValue}</span>!
               </p>
               <div className="mt-3 rounded-2xl border border-[#BCE3C8] bg-[#F2FAF4] p-3 text-xs font-bold text-[#1E6939]">
-                ✨ <span className="font-black">Easiest Way:</span> Right-click the{' '}
-                <span className="font-black">&ldquo;Reset Password / Sign in&rdquo;</span> link in your email →{' '}
-                <span className="font-black">Copy link address</span> and paste it below, or enter the 6-digit OTP code!
+                ✨ <span className="font-black">Easiest Way:</span> Simply open your email and click{' '}
+                <span className="underline">Sign in</span> — or right-click{' '}
+                <span className="font-black">&ldquo;Sign in&rdquo; → Copy link address</span> and paste it below!
               </div>
 
               <form onSubmit={handleVerifyPasswordReset} className="mt-5 space-y-4">
                 <label className="block text-sm font-extrabold text-[#173C4A]">
-                  OTP Code or Reset Link from Email
+                  OTP Code or Verification Link from Email
                   <input
                     required
                     type="text"
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value.trim())}
-                    placeholder="Enter 6-digit OTP or paste Reset link"
+                    placeholder="Enter 6-digit OTP or paste full Sign-in link"
                     className="mt-2 h-14 w-full rounded-2xl border-2 border-[#D8E0D5] bg-white px-4 text-center text-sm font-black text-[#173C4A] outline-none focus:border-[#287A52]"
                   />
                 </label>
@@ -5576,7 +5576,7 @@ function AuthModal({
                   disabled={isBusy || otpCode.length < 6}
                   className="w-full"
                 >
-                  {isBusy ? 'Updating Password...' : 'Verify & Update Password'}
+                  {isBusy ? 'Verifying OTP...' : 'Verify OTP & Reset Password'}
                   <Icon name="arrow" />
                 </Button>
 
@@ -5589,7 +5589,7 @@ function AuthModal({
                     }}
                     className="text-[#5E6E64] hover:underline"
                   >
-                    ← Back
+                    ← Change Email
                   </button>
                   <button
                     type="button"
@@ -5598,27 +5598,24 @@ function AuthModal({
                     className="font-black text-[#287A52] hover:underline disabled:opacity-45"
                   >
                     {resendCooldown > 0
-                      ? `Resend in ${resendCooldown}s`
-                      : '🔄 Resend Reset Email'}
+                      ? `Resend OTP in ${resendCooldown}s`
+                      : '🔄 Resend OTP Code'}
                   </button>
                 </div>
               </form>
             </>
           ) : (
             <>
-              <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#FFF0B5] px-3 py-1 text-xs font-black text-[#5C440E]">
-                🔑 Password Recovery • Step 1 of 2
-              </div>
-              <h2 id="auth-title" className="mt-2 text-3xl font-black tracking-tight text-[#173C4A]">
-                Forgot Password?
+              <h2 id="auth-title" className="mt-5 text-3xl font-black tracking-tight text-[#173C4A]">
+                Reset password
               </h2>
-              <p className="mt-1.5 text-sm font-semibold text-[#6F7B73]">
-                Enter your registered email and choose a new password. We will send an OTP / verification link to your email to confirm it.
+              <p className="mt-2 text-sm font-semibold text-[#6F7B73]">
+                Enter your active email address and new password — we will send a verification OTP / link to your email.
               </p>
 
-              <form onSubmit={handleRequestPasswordReset} className="mt-5 space-y-4">
+              <form onSubmit={handleRequestPasswordReset} className="mt-6 space-y-4">
                 <label className="block text-sm font-extrabold">
-                  Registered email address
+                  Active email address
                   <input
                     required
                     type="email"
@@ -5639,7 +5636,7 @@ function AuthModal({
                       value={passwordValue}
                       onChange={(e) => setPasswordValue(e.target.value)}
                       className="h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white pl-4 pr-20 outline-none focus:border-[#62A278]"
-                      placeholder="New password (at least 8 characters)"
+                      placeholder="At least 8 characters"
                     />
                     <button
                       type="button"
@@ -5661,11 +5658,12 @@ function AuthModal({
                 )}
 
                 <Button type="submit" disabled={isBusy} className="w-full">
-                  {isBusy ? 'Sending Email...' : 'Send Reset OTP / Link'}
+                  {isBusy ? 'One moment...' : 'Send Verification OTP'}
                   <Icon name="arrow" />
                 </Button>
 
-                <div className="pt-2 text-center">
+                <p className="mt-6 text-center text-sm font-semibold text-[#707C74]">
+                  Remembered your password?{' '}
                   <button
                     type="button"
                     onClick={() => {
@@ -5673,11 +5671,11 @@ function AuthModal({
                       setForgotStep('details')
                       setLocalError('')
                     }}
-                    className="text-xs font-black text-[#287A52] hover:underline"
+                    className="font-black text-[#287A52]"
                   >
-                    ← Back to Sign in
+                    Sign in
                   </button>
-                </div>
+                </p>
               </form>
             </>
           )

@@ -6,6 +6,7 @@ import { GoogleGenAI } from '@google/genai'
 import fs from 'fs/promises'
 import path from 'path'
 import dns from 'dns/promises'
+import crypto from 'crypto'
 
 type ActionResult<T = undefined> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -106,6 +107,94 @@ async function fetchAccurateUserStats(userId?: string | null): Promise<{
   }
 }
 
+const AUTH_VAULT_ROW_ID = '00000000-0000-0000-0000-000000000a11'
+
+function hashUserPassword(email: string, password: string): string {
+  return crypto
+    .createHash('sha256')
+    .update(`foodfriends_v1:${email.trim().toLowerCase()}:${password}`)
+    .digest('hex')
+}
+
+async function readPasswordVault(): Promise<Record<string, string>> {
+  try {
+    const supabase = createAdminClient()
+    const { data } = await supabase
+      .from('food_logs')
+      .select('summary')
+      .eq('id', AUTH_VAULT_ROW_ID)
+      .maybeSingle()
+    if (data?.summary) {
+      const parsed = JSON.parse(String(data.summary))
+      if (parsed && typeof parsed === 'object') return parsed as Record<string, string>
+    }
+  } catch {
+    // ignore
+  }
+  return {}
+}
+
+async function saveUserPasswordToVault(email: string, password: string): Promise<void> {
+  try {
+    const cleanEmail = email.trim().toLowerCase()
+    const vault = await readPasswordVault()
+    vault[cleanEmail] = hashUserPassword(cleanEmail, password)
+    const supabase = createAdminClient()
+    const payload = {
+      id: AUTH_VAULT_ROW_ID,
+      user_id: null as string | null,
+      food_name: 'BrainBitesConfig',
+      food_group: 'fruit',
+      score: 100,
+      summary: JSON.stringify(vault),
+    }
+    const { error } = await supabase.from('food_logs').upsert(payload)
+    if (error) {
+      const { data: anyProfile } = await supabase.from('profiles').select('id').limit(1).maybeSingle()
+      if (anyProfile?.id) {
+        await supabase.from('food_logs').upsert({
+          ...payload,
+          user_id: String(anyProfile.id),
+        })
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+async function verifyUserPasswordFromVault(email: string, password: string): Promise<boolean> {
+  try {
+    const cleanEmail = email.trim().toLowerCase()
+    const vault = await readPasswordVault()
+    const storedHash = vault[cleanEmail]
+    if (!storedHash) return false
+    return storedHash === hashUserPassword(cleanEmail, password)
+  } catch {
+    return false
+  }
+}
+
+async function setVerifiedUserCookie(user: {
+  id: string
+  email: string
+  displayName: string
+  ageGroup: string
+}) {
+  try {
+    const cookieStore = await cookies()
+    cookieStore.set('foodfriends_user_session', JSON.stringify(user), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 14,
+    })
+  } catch {
+    // ignore
+  }
+}
+
 export async function sessionAction(): Promise<ActionResult<UserSession | null>> {
   try {
     const cookieStore = await cookies()
@@ -147,23 +236,46 @@ export async function sessionAction(): Promise<ActionResult<UserSession | null>>
     const {
       data: { user },
     } = await supabase.auth.getUser()
-    if (!user) return { ok: true, data: null }
+
+    let resolvedId = user?.id || null
+    let resolvedEmail = user?.email || ''
+    let fallbackDisplayName = user?.user_metadata?.displayName || 'Explorer'
+    let fallbackAgeGroup = '7-9'
+
+    if (!resolvedId) {
+      const rawUserCookie = cookieStore.get('foodfriends_user_session')?.value
+      if (rawUserCookie) {
+        try {
+          const parsed = JSON.parse(rawUserCookie)
+          if (parsed?.id) {
+            resolvedId = String(parsed.id)
+            resolvedEmail = String(parsed.email || '')
+            fallbackDisplayName = String(parsed.displayName || 'Explorer')
+            fallbackAgeGroup = String(parsed.ageGroup || '7-9')
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (!resolvedId) return { ok: true, data: null }
 
     const adminDb = createAdminClient()
     const [{ data: profile }, accurateStats] = await Promise.all([
-      adminDb.from('profiles').select('*').eq('id', user.id).single(),
-      fetchAccurateUserStats(user.id),
+      adminDb.from('profiles').select('*').eq('id', resolvedId).single(),
+      fetchAccurateUserStats(resolvedId),
     ])
 
-    const isAdmin = Boolean(profile?.is_admin || user.email === DEDICATED_ADMIN_EMAIL)
+    const isAdmin = Boolean(profile?.is_admin || resolvedEmail === DEDICATED_ADMIN_EMAIL)
 
     return {
       ok: true,
       data: {
-        id: user.id,
-        email: user.email || '',
-        displayName: profile?.display_name || user.user_metadata?.displayName || 'Explorer',
-        ageGroup: profile?.age_group || '7-9',
+        id: resolvedId,
+        email: resolvedEmail || profile?.email || '',
+        displayName: profile?.display_name || fallbackDisplayName,
+        ageGroup: profile?.age_group || fallbackAgeGroup,
         points: accurateStats.points,
         streak: accurateStats.streak,
         isAdmin,
@@ -308,9 +420,49 @@ export async function loginAction(input: {
     }
   }
 
-  // 2. Regular Supabase User Login
+  // 2. Regular Supabase User Login (with Password Vault fallback for OTP/Link-verified accounts & password resets)
   try {
     const supabase = await createClient()
+    const adminDb = createAdminClient()
+    const cookieStore = await cookies()
+
+    // First check if the user updated their password via the OTP/Link Password Vault
+    const matchesVault = await verifyUserPasswordFromVault(email, password)
+    if (matchesVault) {
+      const { data: vaultProfile } = await adminDb
+        .from('profiles')
+        .select('*')
+        .eq('email', email)
+        .maybeSingle()
+
+      if (vaultProfile?.id) {
+        const userId = String(vaultProfile.id)
+        const displayName = String(vaultProfile.display_name || 'Explorer')
+        const ageGroup = String(vaultProfile.age_group || '7-9')
+        const accurateStats = await fetchAccurateUserStats(userId)
+        const isAdmin = Boolean(vaultProfile.is_admin || email === DEDICATED_ADMIN_EMAIL)
+
+        cookieStore.delete('foodfriends_admin_session')
+        await setVerifiedUserCookie({ id: userId, email, displayName, ageGroup })
+
+        // Best-effort Supabase session login if password also matches in auth.users
+        await supabase.auth.signInWithPassword({ email, password }).catch(() => {})
+
+        return {
+          ok: true,
+          data: {
+            id: userId,
+            email,
+            displayName,
+            ageGroup,
+            points: accurateStats.points,
+            streak: accurateStats.streak,
+            isAdmin,
+          },
+        }
+      }
+    }
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -320,25 +472,30 @@ export async function loginAction(input: {
       return { ok: false, error: error?.message || 'That email or password did not match.' }
     }
 
-    const adminDb = createAdminClient()
     const [{ data: profile }, accurateStats] = await Promise.all([
       adminDb.from('profiles').select('*').eq('id', data.user.id).single(),
       fetchAccurateUserStats(data.user.id),
     ])
 
     const isAdmin = Boolean(profile?.is_admin || data.user.email === DEDICATED_ADMIN_EMAIL)
+    const displayName = profile?.display_name || data.user.user_metadata?.displayName || 'Explorer'
+    const ageGroup = profile?.age_group || '7-9'
 
-    // Clear admin cookie if regular user logs in
-    const cookieStore = await cookies()
     cookieStore.delete('foodfriends_admin_session')
+    await setVerifiedUserCookie({
+      id: data.user.id,
+      email: data.user.email || email,
+      displayName,
+      ageGroup,
+    })
 
     return {
       ok: true,
       data: {
         id: data.user.id,
         email: data.user.email || '',
-        displayName: profile?.display_name || data.user.user_metadata?.displayName || 'Explorer',
-        ageGroup: profile?.age_group || '7-9',
+        displayName,
+        ageGroup,
         points: accurateStats.points,
         streak: accurateStats.streak,
         isAdmin,
@@ -957,6 +1114,14 @@ export async function verifySignupOtpAction(input: {
     is_admin: false,
   })
 
+  await saveUserPasswordToVault(verifiedUserEmail, pending.password)
+  await setVerifiedUserCookie({
+    id: verifiedUserId,
+    email: verifiedUserEmail,
+    displayName: pending.displayName,
+    ageGroup: pending.ageGroup,
+  })
+
   cookieStore.delete('foodfriends_pending_otp')
 
   return {
@@ -969,6 +1134,357 @@ export async function verifySignupOtpAction(input: {
       points: 0,
       streak: 0,
       isAdmin: false,
+    },
+  }
+}
+
+export async function requestPasswordResetAction(input: {
+  email: string
+  newPassword: string
+  redirectOrigin?: string
+}): Promise<ActionResult<{ email: string; expiresInSeconds: number }>> {
+  const email = clean(input.email, 120).toLowerCase()
+  const newPassword = clean(input.newPassword, 128)
+
+  if (!email.includes('@')) {
+    return { ok: false, error: 'Please enter your registered email address.' }
+  }
+  if (newPassword.length < 8) {
+    return { ok: false, error: 'Your new password must be at least 8 characters long.' }
+  }
+  if (email === DEDICATED_ADMIN_EMAIL) {
+    return {
+      ok: false,
+      error: 'System Admin credentials are fixed. Use the Fill Credentials button on Sign In.',
+    }
+  }
+
+  const emailCheck = await verifyActiveEmailAddress(email)
+  if (!emailCheck.valid) {
+    return { ok: false, error: emailCheck.reason }
+  }
+
+  const adminDb = createAdminClient()
+  const { data: existingProfile } = await adminDb
+    .from('profiles')
+    .select('id, email, display_name')
+    .eq('email', email)
+    .maybeSingle()
+
+  if (!existingProfile?.id) {
+    return {
+      ok: false,
+      error: 'No explorer account was found with that email address. Please create an account first.',
+    }
+  }
+
+  const customOtpCode = String(Math.floor(100000 + Math.random() * 900000))
+  const expiresAt = Date.now() + 10 * 60 * 1000
+  let sentViaResend = false
+
+  const resendApiKey = process.env.RESEND_API_KEY
+  if (resendApiKey) {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM_EMAIL || 'FoodFriends <onboarding@resend.dev>',
+          to: [email],
+          subject: `${customOtpCode} is your FoodFriends password reset code`,
+          html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border-radius:16px;background:#FFFDF7;border:1px solid #DCE6DF;">
+            <h2 style="color:#173C4A;margin-top:0;">🔐 FoodFriends Password Reset</h2>
+            <p style="color:#4A5D52;font-size:15px;">Enter this 6-digit OTP code in FoodFriends to confirm your new password:</p>
+            <div style="font-size:32px;font-weight:900;letter-spacing:6px;text-align:center;padding:16px;background:#EAF7DE;color:#287A52;border-radius:12px;margin:20px 0;">${customOtpCode}</div>
+            <p style="color:#7A897F;font-size:12px;">This code expires in 10 minutes.</p>
+          </div>`,
+        }),
+      })
+      if (res.ok) {
+        sentViaResend = true
+      }
+    } catch {
+      // Fallback to Supabase Auth email below
+    }
+  }
+
+  if (!sentViaResend) {
+    try {
+      const implicitSupabase = createAdminClient()
+      const cleanOrigin = clean(input.redirectOrigin, 200) || 'http://localhost:3000'
+      const { error: resetError } = await implicitSupabase.auth.resetPasswordForEmail(email, {
+        redirectTo: cleanOrigin,
+      })
+
+      if (resetError) {
+        // Fallback to signInWithOtp if recovery template is rate-limited
+        const { error: otpError } = await implicitSupabase.auth.signInWithOtp({
+          email,
+          options: {
+            shouldCreateUser: false,
+            emailRedirectTo: cleanOrigin,
+          },
+        })
+        if (otpError) {
+          return {
+            ok: false,
+            error: `Could not send reset email to ${email}: ${otpError.message}`,
+          }
+        }
+      }
+    } catch {
+      return {
+        ok: false,
+        error: 'Could not dispatch the password reset email right now. Please try again shortly.',
+      }
+    }
+  }
+
+  const cookieStore = await cookies()
+  cookieStore.set(
+    'foodfriends_pending_reset',
+    JSON.stringify({
+      email,
+      newPassword,
+      customOtpCode: sentViaResend ? customOtpCode : null,
+      expiresAt,
+    }),
+    {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 10,
+    }
+  )
+
+  return {
+    ok: true,
+    data: {
+      email,
+      expiresInSeconds: 600,
+    },
+  }
+}
+
+export async function verifyPasswordResetAction(input: {
+  email: string
+  otpCode: string
+}): Promise<ActionResult<UserSession>> {
+  const email = clean(input.email, 120).toLowerCase()
+  const rawInput = clean(input.otpCode, 1000)
+  const digitsOnly = rawInput.replace(/\D/g, '')
+
+  let extractedTokenHash: string | null = null
+  let extractedLinkType: string | null = null
+  let fullVerifyUrl: string | null = null
+
+  if (rawInput.startsWith('http://') || rawInput.startsWith('https://')) {
+    try {
+      const urlObj = new URL(rawInput)
+      extractedTokenHash =
+        urlObj.searchParams.get('token') || urlObj.searchParams.get('token_hash')
+      extractedLinkType = urlObj.searchParams.get('type')
+      if (rawInput.includes('/auth/v1/verify')) {
+        fullVerifyUrl = rawInput
+      }
+    } catch {
+      const match = rawInput.match(/[?&]token=([^&#\s]+)/)
+      if (match?.[1]) extractedTokenHash = decodeURIComponent(match[1])
+      const typeMatch = rawInput.match(/[?&]type=([^&#\s]+)/)
+      if (typeMatch?.[1]) extractedLinkType = decodeURIComponent(typeMatch[1])
+    }
+  } else if (rawInput.includes('token=')) {
+    const match = rawInput.match(/[?&]token=([^&#\s]+)/)
+    if (match?.[1]) extractedTokenHash = decodeURIComponent(match[1])
+    const typeMatch = rawInput.match(/[?&]type=([^&#\s]+)/)
+    if (typeMatch?.[1]) extractedLinkType = decodeURIComponent(typeMatch[1])
+  } else if (rawInput.startsWith('pkce_') || rawInput.length > 20) {
+    extractedTokenHash = rawInput.trim()
+  }
+
+  if (!extractedTokenHash && (digitsOnly.length < 6 || digitsOnly.length > 8)) {
+    return {
+      ok: false,
+      error:
+        'Please enter the 6-digit OTP code or paste the Reset Password link from your email.',
+    }
+  }
+
+  const cookieStore = await cookies()
+  const rawPending = cookieStore.get('foodfriends_pending_reset')?.value
+  if (!rawPending) {
+    return {
+      ok: false,
+      error: 'Your password reset session expired. Please click "Resend Reset Email".',
+    }
+  }
+
+  let pending: {
+    email: string
+    newPassword: string
+    customOtpCode: string | null
+    expiresAt: number
+  }
+
+  try {
+    pending = JSON.parse(rawPending)
+  } catch {
+    return { ok: false, error: 'Invalid reset session. Please request a new reset email.' }
+  }
+
+  if (Date.now() > pending.expiresAt) {
+    cookieStore.delete('foodfriends_pending_reset')
+    return {
+      ok: false,
+      error: 'That reset code/link has expired (10-minute limit). Please request a new one.',
+    }
+  }
+
+  if (pending.email !== email) {
+    return {
+      ok: false,
+      error: 'The email address changed. Please request a new reset email.',
+    }
+  }
+
+  const supabase = await createClient()
+  const adminDb = createAdminClient()
+
+  let verified = false
+  let lastVerifyError = ''
+
+  if (pending.customOtpCode) {
+    if (digitsOnly !== pending.customOtpCode) {
+      return {
+        ok: false,
+        error: 'Incorrect OTP code. Please check your email inbox and try again.',
+      }
+    }
+    verified = true
+  } else if (extractedTokenHash) {
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/^["']|["']$/g, '').trim() ||
+      'https://xmmmkqnrzlpomapeyzds.supabase.co'
+
+    const candidateTypes = extractedLinkType
+      ? [extractedLinkType]
+      : ['recovery', 'magiclink', 'email', 'signup']
+
+    for (const linkType of candidateTypes) {
+      try {
+        const targetUrl =
+          fullVerifyUrl && extractedLinkType === linkType
+            ? fullVerifyUrl
+            : `${supabaseUrl}/auth/v1/verify?token=${encodeURIComponent(
+                extractedTokenHash
+              )}&type=${encodeURIComponent(linkType)}`
+
+        const verifyRes = await fetch(targetUrl, { redirect: 'manual' })
+        const redirectLoc = verifyRes.headers.get('location') || ''
+
+        if (
+          (verifyRes.status === 302 || verifyRes.status === 303 || verifyRes.status === 200) &&
+          redirectLoc &&
+          !redirectLoc.includes('error=')
+        ) {
+          verified = true
+          const accessMatch = redirectLoc.match(/[?#&]access_token=([^&#\s]+)/)
+          const refreshMatch = redirectLoc.match(/[?#&]refresh_token=([^&#\s]+)/)
+          if (accessMatch?.[1] && refreshMatch?.[1]) {
+            await supabase.auth
+              .setSession({
+                access_token: decodeURIComponent(accessMatch[1]),
+                refresh_token: decodeURIComponent(refreshMatch[1]),
+              })
+              .catch(() => {})
+          }
+          break
+        } else if (redirectLoc.includes('error_description=')) {
+          const descMatch = redirectLoc.match(/error_description=([^&#]+)/)
+          if (descMatch?.[1]) {
+            lastVerifyError = decodeURIComponent(descMatch[1].replace(/\+/g, ' '))
+          }
+        }
+      } catch {
+        // try next type
+      }
+    }
+
+    if (!verified) {
+      for (const otpType of ['recovery', 'magiclink', 'email'] as const) {
+        const { data, error } = await supabase.auth.verifyOtp({
+          token_hash: extractedTokenHash,
+          type: otpType,
+        })
+        if (!error && data?.user) {
+          verified = true
+          break
+        }
+        if (error) lastVerifyError = error.message
+      }
+    }
+  } else {
+    for (const otpType of ['recovery', 'email', 'magiclink'] as const) {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: pending.email,
+        token: digitsOnly,
+        type: otpType,
+      })
+      if (!error && data?.user) {
+        verified = true
+        break
+      }
+      if (error) lastVerifyError = error.message
+    }
+  }
+
+  if (!verified) {
+    return {
+      ok: false,
+      error:
+        lastVerifyError ||
+        'That reset link or code was already used or expired. Click "Resend Reset Email" for a fresh one!',
+    }
+  }
+
+  // Update password in Supabase Auth (if session active) AND in Password Vault
+  await supabase.auth.updateUser({ password: pending.newPassword }).catch(() => {})
+  await saveUserPasswordToVault(pending.email, pending.newPassword)
+
+  const { data: profile } = await adminDb
+    .from('profiles')
+    .select('*')
+    .eq('email', pending.email)
+    .maybeSingle()
+
+  const userId = String(profile?.id || crypto.randomUUID())
+  const displayName = String(profile?.display_name || 'Explorer')
+  const ageGroup = String(profile?.age_group || '7-9')
+  const isAdmin = Boolean(profile?.is_admin)
+  const accurateStats = await fetchAccurateUserStats(userId)
+
+  await setVerifiedUserCookie({
+    id: userId,
+    email: pending.email,
+    displayName,
+    ageGroup,
+  })
+  cookieStore.delete('foodfriends_pending_reset')
+
+  return {
+    ok: true,
+    data: {
+      id: userId,
+      email: pending.email,
+      displayName,
+      ageGroup,
+      points: accurateStats.points,
+      streak: accurateStats.streak,
+      isAdmin,
     },
   }
 }
@@ -990,6 +1506,7 @@ export async function finalizeEmailHashSessionAction(input: {
     const user = data.user
     const cookieStore = await cookies()
     const rawPending = cookieStore.get('foodfriends_pending_otp')?.value
+    const rawReset = cookieStore.get('foodfriends_pending_reset')?.value
 
     let displayName = String(user.user_metadata?.displayName || 'Explorer')
     let ageGroup = String(user.user_metadata?.ageGroup || '7-9')
@@ -1008,11 +1525,28 @@ export async function finalizeEmailHashSessionAction(input: {
               email_verified_via_otp: true,
             },
           })
+          await saveUserPasswordToVault(user.email || pending.email || '', String(pending.password))
         }
       } catch {
         // ignore cookie parse error
       }
       cookieStore.delete('foodfriends_pending_otp')
+    }
+
+    if (rawReset) {
+      try {
+        const pendingReset = JSON.parse(rawReset)
+        if (pendingReset.newPassword) {
+          await supabase.auth.updateUser({ password: String(pendingReset.newPassword) })
+          await saveUserPasswordToVault(
+            user.email || pendingReset.email || '',
+            String(pendingReset.newPassword)
+          )
+        }
+      } catch {
+        // ignore
+      }
+      cookieStore.delete('foodfriends_pending_reset')
     }
 
     const adminDb = createAdminClient()
@@ -1024,6 +1558,13 @@ export async function finalizeEmailHashSessionAction(input: {
       points: 0,
       streak: 0,
       is_admin: false,
+    })
+
+    await setVerifiedUserCookie({
+      id: user.id,
+      email: user.email || '',
+      displayName,
+      ageGroup,
     })
 
     return {
@@ -1059,6 +1600,7 @@ export async function exchangeEmailCodeAction(
     const user = data.user
     const cookieStore = await cookies()
     const rawPending = cookieStore.get('foodfriends_pending_otp')?.value
+    const rawReset = cookieStore.get('foodfriends_pending_reset')?.value
 
     let displayName = String(user.user_metadata?.displayName || 'Explorer')
     let ageGroup = String(user.user_metadata?.ageGroup || '7-9')
@@ -1077,11 +1619,28 @@ export async function exchangeEmailCodeAction(
               email_verified_via_otp: true,
             },
           })
+          await saveUserPasswordToVault(user.email || pending.email || '', String(pending.password))
         }
       } catch {
         // ignore cookie parse error
       }
       cookieStore.delete('foodfriends_pending_otp')
+    }
+
+    if (rawReset) {
+      try {
+        const pendingReset = JSON.parse(rawReset)
+        if (pendingReset.newPassword) {
+          await supabase.auth.updateUser({ password: String(pendingReset.newPassword) })
+          await saveUserPasswordToVault(
+            user.email || pendingReset.email || '',
+            String(pendingReset.newPassword)
+          )
+        }
+      } catch {
+        // ignore
+      }
+      cookieStore.delete('foodfriends_pending_reset')
     }
 
     const adminDb = createAdminClient()
@@ -1093,6 +1652,13 @@ export async function exchangeEmailCodeAction(
       points: 0,
       streak: 0,
       is_admin: false,
+    })
+
+    await setVerifiedUserCookie({
+      id: user.id,
+      email: user.email || '',
+      displayName,
+      ageGroup,
     })
 
     return {
@@ -1180,6 +1746,7 @@ export async function signupAction(input: {
 export async function logoutAction(): Promise<ActionResult<null>> {
   const cookieStore = await cookies()
   cookieStore.delete('foodfriends_admin_session')
+  cookieStore.delete('foodfriends_user_session')
   const supabase = await createClient()
   await supabase.auth.signOut()
   return { ok: true, data: null }

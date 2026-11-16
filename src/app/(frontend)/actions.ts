@@ -2688,40 +2688,6 @@ export async function adminToggleAdminStatusAction(
   }
 }
 
-// 5. System Announcement & Bananini Daily Message
-let systemAnnouncement = {
-  quote: 'Every color is a new power!',
-  bannerText: '🥦 Healthy Food Week: Scan an apple or broccoli today for bonus explorer points!',
-  showBanner: true,
-}
-
-export async function getAnnouncementAction(): Promise<
-  ActionResult<{ quote: string; bannerText: string; showBanner: boolean }>
-> {
-  return { ok: true, data: systemAnnouncement }
-}
-
-export async function adminUpdateAnnouncementAction(input: {
-  quote: string
-  bannerText: string
-  showBanner: boolean
-}): Promise<ActionResult<{ quote: string; bannerText: string; showBanner: boolean }>> {
-  try {
-    const isAllowed = await verifyAdmin()
-    if (!isAllowed) return { ok: false, error: 'Unauthorized.' }
-
-    systemAnnouncement = {
-      quote: clean(input.quote, 140) || 'Every color is a new power!',
-      bannerText: clean(input.bannerText, 200),
-      showBanner: Boolean(input.showBanner),
-    }
-
-    return { ok: true, data: systemAnnouncement }
-  } catch {
-    return { ok: false, error: 'Failed to update announcement.' }
-  }
-}
-
 // ==========================================
 // 6. LEARN & PLAY: BANANINI'S BRAIN BITES MANAGER
 // ==========================================

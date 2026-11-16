@@ -121,27 +121,6 @@ const navItems: { id: View; label: string; icon: IconName }[] = [
   { id: 'analytics', label: 'Food Analytics', icon: 'chart' },
 ]
 
-const questions = [
-  {
-    q: 'Which snack gives you long-lasting energy?',
-    options: ['Apple & peanut butter', 'Gummy candy', 'Fizzy drink'],
-    answer: 0,
-    note: 'Fruit plus protein is a power-team for steady energy.',
-  },
-  {
-    q: 'Which color should join your plate next?',
-    options: ['A new veggie color', 'Only beige foods', 'No colors'],
-    answer: 0,
-    note: 'Different colors often bring different helpful nutrients.',
-  },
-  {
-    q: 'What is the best everyday drink?',
-    options: ['Water', 'Soda', 'Energy drink'],
-    answer: 0,
-    note: 'Water helps your brain and body do their best work.',
-  },
-]
-
 function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, ReactNode> = {
     home: (
@@ -275,207 +254,6 @@ function Button({
       {children}
     </button>
   )
-}
-
-function resultFor(name: string): ScanResult {
-  const n = name.toLowerCase()
-  if (n.includes('pancake') || n.includes('waffle')) {
-    return {
-      name: name || 'Fluffy Golden Pancakes',
-      group: 'grain',
-      estimatedPortion: 'Stack of 5 golden pancakes (~220g)',
-      score: 74,
-      summary: 'Fluffy golden pancakes to fuel your active morning!',
-      color: '#C89A5D',
-      explanation:
-        'Pancakes are made from grains that provide steady carbohydrates for active energy. Pair them with fresh fruit or eggs for an even more balanced breakfast!',
-      nutrients: {
-        calories: '450 kcal',
-        protein: '9g',
-        carbs: '75g',
-        fat: '12g',
-        fiber: '2.5g',
-        sugar: '14g',
-        vitamins: ['Vitamin B1 (Thiamine)', 'Vitamin B2 (Riboflavin)', 'Folate'],
-        minerals: ['Calcium', 'Iron', 'Phosphorus'],
-      },
-      funFact: 'Pancakes have been enjoyed around the world since ancient Greek and Roman times!',
-      tip: 'Top with sliced bananas or fresh strawberries instead of heavy syrup for natural fruit sweetness!',
-    }
-  }
-  if (
-    n.includes('broccoli') ||
-    n.includes('carrot') ||
-    n.includes('vegetable') ||
-    n.includes('salad') ||
-    n.includes('tomato')
-  ) {
-    return {
-      name: name || 'Crunchy vegetables',
-      group: 'vegetable',
-      estimatedPortion: '1 cup fresh chopped veggies (~120g)',
-      score: 96,
-      summary: 'A colorful everyday choice packed with fiber and vitamins.',
-      color: '#65A968',
-      explanation:
-        'Vegetables are nature’s powerhouses! Packed with dietary fiber, vitamin A, and antioxidants, they support digestion, glowing skin, and strong eyesight.',
-      nutrients: {
-        calories: '45 kcal',
-        protein: '2.5g',
-        carbs: '8g',
-        fat: '0.4g',
-        fiber: '3.8g',
-        sugar: '2.2g',
-        vitamins: ['Vitamin A', 'Vitamin C', 'Vitamin K'],
-        minerals: ['Potassium', 'Calcium', 'Folate'],
-      },
-      funFact: 'Broccoli contains as much Vitamin C as an orange!',
-      tip: 'Eat a rainbow of different colored veggies every week.',
-    }
-  }
-  if (
-    n.includes('egg') ||
-    n.includes('chicken') ||
-    n.includes('bean') ||
-    n.includes('fish') ||
-    n.includes('meat') ||
-    n.includes('beef') ||
-    n.includes('pork') ||
-    n.includes('tofu')
-  ) {
-    return {
-      name: name || 'Protein food',
-      group: 'protein',
-      estimatedPortion: '1 portion (~150g)',
-      score: 90,
-      summary: 'Protein helps growing muscles. Pair it with a colorful plant food.',
-      color: '#E99D55',
-      explanation:
-        'Protein provides the essential amino acids your body needs to rebuild muscles, support strong hair and nails, and keep you satisfied between meals.',
-      nutrients: {
-        calories: '165 kcal',
-        protein: '26g',
-        carbs: '0g',
-        fat: '4.5g',
-        fiber: '0g',
-        sugar: '0g',
-        vitamins: ['Vitamin B6', 'Vitamin B12', 'Niacin'],
-        minerals: ['Iron', 'Zinc', 'Phosphorus'],
-      },
-      funFact: 'Eggs contain almost every single vitamin your body needs except Vitamin C!',
-      tip: 'Balance protein with fresh veggies or whole grains on your plate.',
-    }
-  }
-  if (n.includes('yogurt') || n.includes('milk') || n.includes('cheese')) {
-    return {
-      name: name || 'Dairy food',
-      group: 'dairy',
-      estimatedPortion: '1 cup serving (~200g)',
-      score: 84,
-      summary: 'A calcium helper for strong bones. Look for less added sugar.',
-      color: '#81A8D9',
-      explanation:
-        'Dairy supplies bioavailable calcium and vitamin D to fortify bones and teeth, along with probiotics in yogurt for healthy gut bacteria.',
-      nutrients: {
-        calories: '120 kcal',
-        protein: '9g',
-        carbs: '12g',
-        fat: '3.5g',
-        fiber: '0g',
-        sugar: '9g',
-        vitamins: ['Vitamin D', 'Vitamin B2', 'Vitamin A'],
-        minerals: ['Calcium', 'Phosphorus', 'Potassium'],
-      },
-      funFact: 'A single cup of yogurt can provide 30% of your daily calcium needs!',
-      tip: 'Choose plain or Greek yogurt with fresh berries instead of flavored sugary cups.',
-    }
-  }
-  if (
-    n.includes('candy') ||
-    n.includes('cookie') ||
-    n.includes('soda') ||
-    n.includes('cake') ||
-    n.includes('chocolate') ||
-    n.includes('chips') ||
-    n.includes('donut') ||
-    n.includes('ice cream')
-  ) {
-    return {
-      name: name || 'Sweet treat',
-      group: 'treat',
-      estimatedPortion: '1 small treat portion (~50g)',
-      score: 48,
-      summary: 'A sometimes food. Enjoy a small amount and add water or fruit.',
-      color: '#D97984',
-      explanation:
-        'Treats give a quick burst of fast-burning sugar energy, but little long-term fuel. Perfect for celebrating occasionally in mindful portions!',
-      nutrients: {
-        calories: '220 kcal',
-        protein: '2g',
-        carbs: '34g',
-        fat: '9g',
-        fiber: '0.8g',
-        sugar: '24g',
-        vitamins: ['Vitamin B1'],
-        minerals: ['Sodium'],
-      },
-      funFact: 'Dark chocolate with high cocoa contains healthy plant flavanols!',
-      tip: 'Enjoy your treat after a nourishing meal rather than on an empty stomach.',
-    }
-  }
-  if (
-    n.includes('bread') ||
-    n.includes('rice') ||
-    n.includes('oat') ||
-    n.includes('pasta') ||
-    n.includes('cereal') ||
-    n.includes('corn')
-  ) {
-    return {
-      name: name || 'Whole grain',
-      group: 'grain',
-      estimatedPortion: '1 medium bowl (~160g)',
-      score: 82,
-      summary: 'Grains give energy. Whole-grain choices keep your engine going longer.',
-      color: '#C89A5D',
-      explanation:
-        'Whole grains are full of complex carbohydrates and soluble fiber that break down steadily, fueling your brain and keeping stamina steady for hours.',
-      nutrients: {
-        calories: '150 kcal',
-        protein: '5g',
-        carbs: '32g',
-        fat: '1.2g',
-        fiber: '4g',
-        sugar: '1g',
-        vitamins: ['Thiamine (B1)', 'Riboflavin (B2)', 'Folate'],
-        minerals: ['Magnesium', 'Iron', 'Selenium'],
-      },
-      funFact: 'Oats have a unique fiber called beta-glucan that supports a healthy heart!',
-      tip: 'Look for brown rice or whole wheat labels to get 3x more natural fiber.',
-    }
-  }
-  return {
-    name: name || 'Fresh fruit',
-    group: 'fruit',
-    estimatedPortion: '1 medium piece (~140g)',
-    score: 94,
-    summary: 'A naturally sweet everyday choice with fiber for a happy tummy.',
-    color: '#E45B4E',
-    explanation:
-      'Fruits deliver natural fructose, hydration, and pectin fiber. They satisfy sweet cravings while providing cellular defense through vitamin C and polyphenols.',
-    nutrients: {
-      calories: '95 kcal',
-      protein: '0.5g',
-      carbs: '25g',
-      fat: '0.3g',
-      fiber: '4.4g',
-      sugar: '19g',
-      vitamins: ['Vitamin C', 'Vitamin K', 'Beta-Carotene'],
-      minerals: ['Potassium', 'Manganese'],
-    },
-    funFact: 'Apples float in water because 25% of their volume is actually air!',
-    tip: 'Keep the peel on when eating apples — that is where half the fiber lives!',
-  }
 }
 
 function foodPowers(group: ScanResult['group']) {
@@ -2864,8 +2642,6 @@ type CumulativeLearnProfile = {
   totalCorrect: number
   daysCompleted: number
   lastCompletedDate: string
-  masteryByCategory: Record<string, number>
-  studiedCards: string[]
 }
 
 const LEARNING_LEVELS = [
@@ -2875,69 +2651,6 @@ const LEARNING_LEVELS = [
   { level: 4, title: 'Veggie Guardian', icon: '🥦', minXp: 450, nextXp: 700 },
   { level: 5, title: 'Rainbow Chef', icon: '🌈', minXp: 700, nextXp: 1000 },
   { level: 6, title: 'Grand Food Master', icon: '👑', minXp: 1000, nextXp: 1500 },
-]
-
-const SUPERFOOD_COLLECTIBLE_CARDS = [
-  {
-    id: 'card_bananini',
-    name: 'Golden Bananini',
-    role: 'Potassium Spark',
-    emoji: '🍌',
-    unlockXp: 0,
-    bg: '#FFF4C2',
-    power: 'Stops muscle cramps & fuels playground sprints!',
-    secret: 'Bananas float in water just like apples and watermelons!',
-  },
-  {
-    id: 'card_carrot',
-    name: 'Captain Carrot',
-    role: 'Night-Vision Ranger',
-    emoji: '🥕',
-    unlockXp: 50,
-    bg: '#FFE6D1',
-    power: 'Loaded with Beta-Carotene (Vitamin A) for eagle-sharp eyes!',
-    secret: 'The very first farmed carrots were purple and yellow!',
-  },
-  {
-    id: 'card_broccoli',
-    name: 'Sir Broccoli',
-    role: 'Emerald Tree Shield',
-    emoji: '🥦',
-    unlockXp: 120,
-    bg: '#DCF5E3',
-    power: 'Has more Vitamin C per gram than an orange plus bone-building Vitamin K!',
-    secret: 'Each tiny dot on top of broccoli is actually a baby flower bud!',
-  },
-  {
-    id: 'card_berry',
-    name: 'Berry Blaster',
-    role: 'Memory Guardian',
-    emoji: '🫐',
-    unlockXp: 220,
-    bg: '#E8E2FA',
-    power: 'Blue & purple anthocyanins supercharge brain memory and focus!',
-    secret: 'Strawberries are the only fruit that wear their seeds on the outside!',
-  },
-  {
-    id: 'card_oats',
-    name: 'Professor Oats',
-    role: 'Steady Rocket Fuel',
-    emoji: '🌾',
-    unlockXp: 350,
-    bg: '#FDF0D5',
-    power: 'Whole-grain fiber releases energy slowly for 4+ hours of focus!',
-    secret: 'Popcorn is actually a member of the healthy whole-grain family!',
-  },
-  {
-    id: 'card_calcium',
-    name: 'Mighty Yogurt',
-    role: 'Bone & Tummy Hero',
-    emoji: '🥛',
-    unlockXp: 500,
-    bg: '#DFF0FC',
-    power: 'Packs Calcium for unbreakable bones plus billions of friendly probiotics!',
-    secret: 'Your teeth and bones store 99% of all the calcium in your body!',
-  },
 ]
 
 function Learn({
@@ -2989,20 +2702,7 @@ function Learn({
     totalCorrect: 0,
     daysCompleted: 0,
     lastCompletedDate: '',
-    masteryByCategory: {
-      fruit: 15,
-      vegetable: 15,
-      grain: 10,
-      protein: 10,
-      dairy: 15,
-      habits: 20,
-    },
-    studiedCards: [],
   })
-
-  // Interactive Learning Hub Bottom Tab ('mastery' | 'cards' | 'guide')
-  const [activeLearnTab, setActiveLearnTab] = useState<'mastery' | 'cards' | 'guide'>('mastery')
-  const [flippedCardId, setFlippedCardId] = useState<string | null>('card_bananini')
 
   // Interactive Mini Challenge State
   const [challengeActive, setChallengeActive] = useState(false)
@@ -3010,9 +2710,6 @@ function Learn({
 
   // Interactive Fun Facts Carousel State
   const [factIndex, setFactIndex] = useState(0)
-
-  // Interactive Superpower Food Guide State
-  const [activeGuideGroup, setActiveGuideGroup] = useState<string>('fruit')
 
   // Strictly Admin-Only Management State
   const [generatingAiQ, setGeneratingAiQ] = useState(false)
@@ -3073,10 +2770,6 @@ function Learn({
         setLearnProfile((prev) => ({
           ...prev,
           ...parsedProfile,
-          masteryByCategory: {
-            ...prev.masteryByCategory,
-            ...(parsedProfile.masteryByCategory || {}),
-          },
         }))
       }
     } catch {
@@ -3172,9 +2865,6 @@ function Learn({
     100,
     Math.round(((learnProfile.totalXp - currentRank.minXp) / levelSpan) * 100)
   )
-  const unlockedCardsCount = SUPERFOOD_COLLECTIBLE_CARDS.filter(
-    (c) => learnProfile.totalXp >= c.unlockXp
-  ).length
 
   const categoryMeta: Record<
     string,
@@ -3255,113 +2945,10 @@ function Learn({
         saveProfileState({
           ...learnProfile,
           totalXp: learnProfile.totalXp + 15,
-          masteryByCategory: {
-            ...learnProfile.masteryByCategory,
-            habits: Math.min(100, (learnProfile.masteryByCategory.habits || 0) + 12),
-          },
         })
       }
       return next
     })
-  }
-
-  const foodGuideGroups = [
-    {
-      id: 'fruit',
-      emoji: '🍎',
-      name: 'Sweet Fruits',
-      power: 'Immune Shield & Quick Spark',
-      color: '#FDE8E8',
-      vitamins: ['Vitamin C', 'Potassium', 'Antioxidants', 'Fiber'],
-      examples: 'Apples, bananas, berries, mangoes, oranges, watermelon',
-      summary:
-        'Fruits are nature’s colorful snack! Their Vitamin C protects you from sniffles while natural fiber keeps your energy smooth.',
-      flashcardSecret:
-        'Eating a whole apple with its skin gives you 4x more tummy-friendly fiber than drinking apple juice!',
-    },
-    {
-      id: 'vegetable',
-      emoji: '🥦',
-      name: 'Crunchy Veggies',
-      power: 'Super Vision & Happy Tummy',
-      color: '#E3F6E8',
-      vitamins: ['Vitamin A', 'Vitamin K', 'Folate', 'Iron'],
-      examples: 'Broccoli, carrots, spinach, bell peppers, cucumbers, sweet corn',
-      summary:
-        'Different veggie colors unlock different powers—orange veggies sharpen your eyes, and leafy greens build strong blood and bones!',
-      flashcardSecret:
-        'Red bell peppers actually have nearly 3x more Vitamin C than an orange!',
-    },
-    {
-      id: 'grain',
-      emoji: '🌾',
-      name: 'Whole Grains',
-      power: 'Long-Lasting Brain & Play Fuel',
-      color: '#FFF6D6',
-      vitamins: ['B-Vitamins', 'Dietary Fiber', 'Magnesium', 'Complex Carbs'],
-      examples: 'Oatmeal, brown rice, whole-wheat bread, corn, quinoa',
-      summary:
-        'Whole grains release energy slowly like a steady battery so you can focus in class and run fast on the playground.',
-      flashcardSecret:
-        'Oatmeal contains a special fiber called beta-glucan that keeps your heart and tummy super happy!',
-    },
-    {
-      id: 'protein',
-      emoji: '🍗',
-      name: 'Mighty Proteins',
-      power: 'Muscle Builder & Body Repair',
-      color: '#EFE4F7',
-      vitamins: ['Amino Acids', 'Iron', 'Zinc', 'Vitamin B12'],
-      examples: 'Eggs, chicken, fish, beans, lentils, tofu, peanut butter',
-      summary:
-        'Proteins are your body’s building blocks! They repair muscles, help you grow taller, and keep you full for hours.',
-      flashcardSecret:
-        'Your hair, fingernails, and muscles are all built out of tiny protein chains called amino acids!',
-    },
-    {
-      id: 'dairy',
-      emoji: '🥛',
-      name: 'Creamy Dairy',
-      power: 'Unbreakable Bones & Smile Shield',
-      color: '#E2F2FC',
-      vitamins: ['Calcium', 'Vitamin D', 'Probiotics', 'Protein'],
-      examples: 'Milk, yogurt, cheese, fortified soy or almond milk',
-      summary:
-        'Calcium and Vitamin D work together like armor for your growing bones and teeth, while yogurt probiotics help your tummy!',
-      flashcardSecret:
-        'Cheese and yogurt are fermented by friendly bacteria that make them easier for your tummy to digest!',
-    },
-    {
-      id: 'habits',
-      emoji: '🌈',
-      name: 'Rainbow Habits',
-      power: 'Smart Balance & Hydration',
-      color: '#EAF7DE',
-      vitamins: ['Hydration', 'Mindful Chewing', 'Rainbow Variety', 'Sleep & Play'],
-      examples: 'Drinking 6-8 glasses of water, eating 3+ colors per meal',
-      summary:
-        'Combining colorful whole foods, drinking plenty of water, and enjoying treats in small portions makes you a true Food Explorer!',
-      flashcardSecret:
-        'Drinking a glass of water in the morning wakes up your brain 14% faster for school!',
-    },
-  ]
-
-  const currentGuide =
-    foodGuideGroups.find((g) => g.id === activeGuideGroup) || foodGuideGroups[0]
-
-  const handleStudyFlashcard = (groupId: string) => {
-    const studyKey = `${todayKey}_${groupId}`
-    if (learnProfile.studiedCards.includes(studyKey)) return
-    const nextProfile: CumulativeLearnProfile = {
-      ...learnProfile,
-      totalXp: learnProfile.totalXp + 10,
-      masteryByCategory: {
-        ...learnProfile.masteryByCategory,
-        [groupId]: Math.min(100, (learnProfile.masteryByCategory[groupId] || 10) + 12),
-      },
-      studiedCards: [...learnProfile.studiedCards, studyKey],
-    }
-    saveProfileState(nextProfile)
   }
 
   const handleUseBananiniHint = () => {
@@ -3405,19 +2992,11 @@ function Learn({
     setLastXpGain(gainedXp)
     setAnsweredRecords(nextRecords)
 
-    const catKey = q.category || 'habits'
-    const currentCatMastery = learnProfile.masteryByCategory[catKey] || 10
-    const nextMastery = Math.min(100, currentCatMastery + (isRight ? 10 : 3))
-
     saveProfileState({
       ...learnProfile,
       totalXp: learnProfile.totalXp + gainedXp,
       totalAnswered: learnProfile.totalAnswered + 1,
       totalCorrect: learnProfile.totalCorrect + (isRight ? 1 : 0),
-      masteryByCategory: {
-        ...learnProfile.masteryByCategory,
-        [catKey]: nextMastery,
-      },
     })
 
     saveDailyState({

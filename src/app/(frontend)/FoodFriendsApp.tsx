@@ -5375,12 +5375,6 @@ function AuthModal({
     return () => window.clearInterval(poll)
   }, [mode, signupStep, onAuthSuccess])
 
-  const handleFillAdmin = () => {
-    setEmailValue('admin@foodfriends.com')
-    setPasswordValue('admin123456')
-    setLocalError('')
-  }
-
   // Step 1 of Forgot Password: Enter Email Only -> Send Verification OTP
   const handleRequestPasswordReset = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -5843,22 +5837,6 @@ function AuthModal({
                 ? 'Your food adventures are waiting.'
                 : 'Use an active email address — we will send a 6-digit OTP to verify it.'}
             </p>
-
-            {mode === 'login' && (
-              <div className="mt-4 flex items-center justify-between rounded-2xl border-2 border-[#FFD84D] bg-[#FFFCEB] p-3.5 shadow-sm">
-                <div>
-                  <p className="text-xs font-black text-[#173C4A]">👑 System Admin Account</p>
-                  <p className="text-[11px] font-semibold text-[#666B5E]">admin@foodfriends.com</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleFillAdmin}
-                  className="rounded-xl bg-[#173C4A] px-3 py-1.5 text-xs font-black text-white transition hover:bg-[#255061]"
-                >
-                  Fill Credentials
-                </button>
-              </div>
-            )}
 
             <form onSubmit={handleRequestSignupOtp} className="mt-6 space-y-4">
               {mode === 'signup' && (

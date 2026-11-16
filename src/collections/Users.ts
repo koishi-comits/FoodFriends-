@@ -31,7 +31,7 @@ export const Users: CollectionConfig = {
       name: 'ageGroup',
       type: 'select',
       defaultValue: '7-9',
-      options: ['4-6', '7-9', '10-12'],
+      options: ['4-6', '7-9', '10-12', '13+'],
     },
     {
       name: 'points',

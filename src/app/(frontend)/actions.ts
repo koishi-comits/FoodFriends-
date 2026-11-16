@@ -652,6 +652,15 @@ export type SignupOtpChallenge = {
   expiresInSeconds: number
 }
 
+export type AgeGroupOption = '4-6' | '7-9' | '10-12' | '13+'
+
+function normalizeAgeGroup(value: unknown): AgeGroupOption {
+  const v = typeof value === 'string' ? value.trim() : ''
+  if (v === '4-6' || v === '7-9' || v === '10-12' || v === '13+') return v
+  if (v.toLowerCase().includes('above') || v.includes('13')) return '13+'
+  return '7-9'
+}
+
 export async function requestSignupOtpAction(input: {
   displayName: string
   email: string
@@ -662,8 +671,7 @@ export async function requestSignupOtpAction(input: {
   const displayName = clean(input.displayName, 40)
   const email = clean(input.email, 120).toLowerCase()
   const password = clean(input.password, 128)
-  const ageGroup: '4-6' | '7-9' | '10-12' =
-    input.ageGroup === '4-6' || input.ageGroup === '10-12' ? input.ageGroup : '7-9'
+  const ageGroup: AgeGroupOption = normalizeAgeGroup(input.ageGroup)
 
   if (displayName.length < 2) {
     return { ok: false, error: 'Please add a first name or nickname (at least 2 characters).' }
@@ -857,7 +865,7 @@ export async function verifySignupOtpAction(input: {
     displayName: string
     email: string
     password: string
-    ageGroup: '4-6' | '7-9' | '10-12'
+    ageGroup: AgeGroupOption
     customOtpCode: string | null
     expiresAt: number
   }
@@ -1754,8 +1762,7 @@ export async function signupAction(input: {
   const displayName = clean(input.displayName, 40)
   const email = clean(input.email, 120).toLowerCase()
   const password = clean(input.password, 128)
-  const ageGroup: '4-6' | '7-9' | '10-12' =
-    input.ageGroup === '4-6' || input.ageGroup === '10-12' ? input.ageGroup : '7-9'
+  const ageGroup: AgeGroupOption = normalizeAgeGroup(input.ageGroup)
 
   if (displayName.length < 2) return { ok: false, error: 'Please add a first name or nickname.' }
   if (!email.includes('@')) return { ok: false, error: 'Please use a valid email.' }

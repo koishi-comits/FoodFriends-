@@ -202,7 +202,7 @@ export interface Admin {
 export interface User {
   id: string;
   displayName: string;
-  ageGroup?: ('4-6' | '7-9' | '10-12') | null;
+  ageGroup?: ('4-6' | '7-9' | '10-12' | '13+') | null;
   points?: number | null;
   streak?: number | null;
   createdBy?:

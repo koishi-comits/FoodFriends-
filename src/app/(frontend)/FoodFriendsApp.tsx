@@ -4921,7 +4921,7 @@ function Profile({
                   </span>
                 ) : (
                   <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-black text-white">
-                    🌱 LEVEL {user.ageGroup}
+                    🌱 LEVEL {user.ageGroup === '13+' ? '13+ (Above 12)' : user.ageGroup}
                   </span>
                 )}
               </div>
@@ -4980,6 +4980,7 @@ function Profile({
                   <option value="4-6">Ages 4-6 (Little Sprout)</option>
                   <option value="7-9">Ages 7-9 (Junior Explorer)</option>
                   <option value="10-12">Ages 10-12 (Super Captain)</option>
+                  <option value="13+">Ages 13+ (Above 12 / Teen &amp; Adult)</option>
                   {user.isAdmin && <option value="Admin">Admin</option>}
                 </select>
               </label>
@@ -5070,7 +5071,12 @@ function Profile({
           label="Current streak"
           color="#F8DBD1"
         />
-        <Stat icon="learn" value={user.ageGroup} label="Learning level" color="#DDEFC8" />
+        <Stat
+          icon="learn"
+          value={user.ageGroup === '13+' ? '13+ (Above 12)' : user.ageGroup}
+          label="Age group / Level"
+          color="#DDEFC8"
+        />
       </div>
 
       {/* Live Explorer Achievements & Badges */}
@@ -5877,15 +5883,16 @@ function AuthModal({
                       onChange={(e) => setAgeGroupValue(e.target.value)}
                       className="mt-2 h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white px-4 outline-none"
                     >
-                      <option>4-6</option>
-                      <option>7-9</option>
-                      <option>10-12</option>
+                      <option value="4-6">Ages 4-6 (Little Sprout)</option>
+                      <option value="7-9">Ages 7-9 (Junior Explorer)</option>
+                      <option value="10-12">Ages 10-12 (Super Captain)</option>
+                      <option value="13+">Ages 13+ (Above 12 / Teen &amp; Adult)</option>
                     </select>
                   </label>
                 </>
               )}
               <label className="block text-sm font-extrabold">
-                {mode === 'signup' ? 'Active email address' : 'Grown-up email'}
+                {mode === 'signup' ? 'Active email address' : 'Email address'}
                 <input
                   required
                   name="email"

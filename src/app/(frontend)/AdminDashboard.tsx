@@ -401,7 +401,7 @@ export default function AdminDashboard({ onBack }: { onBack?: () => void }) {
                         </td>
                         <td className="py-4 pr-4 font-bold text-[#4B5E53]">
                           <span className="rounded-lg bg-[#EBF6EE] px-2.5 py-1 text-xs">
-                            Age {u.age_group}
+                            {u.age_group === '13+' ? 'Age 13+ (Above 12)' : `Age ${u.age_group}`}
                           </span>
                         </td>
                         <td className="py-4 pr-4">

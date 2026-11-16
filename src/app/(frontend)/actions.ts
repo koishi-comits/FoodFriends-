@@ -1142,17 +1142,12 @@ export async function verifySignupOtpAction(input: {
 
 export async function requestPasswordResetAction(input: {
   email: string
-  newPassword: string
   redirectOrigin?: string
 }): Promise<ActionResult<{ email: string; expiresInSeconds: number }>> {
   const email = clean(input.email, 120).toLowerCase()
-  const newPassword = clean(input.newPassword, 128)
 
   if (!email.includes('@')) {
     return { ok: false, error: 'Please enter your registered email address.' }
-  }
-  if (newPassword.length < 8) {
-    return { ok: false, error: 'Your new password must be at least 8 characters long.' }
   }
   if (email === DEDICATED_ADMIN_EMAIL) {
     return {
@@ -1185,7 +1180,7 @@ export async function requestPasswordResetAction(input: {
           subject: `${customOtpCode} is your FoodFriends verification code`,
           html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border-radius:16px;background:#FFFDF7;border:1px solid #DCE6DF;">
             <h2 style="color:#173C4A;margin-top:0;">🍌 FoodFriends Password Verification</h2>
-            <p style="color:#4A5D52;font-size:15px;">Enter this 6-digit OTP code in FoodFriends to confirm your new password:</p>
+            <p style="color:#4A5D52;font-size:15px;">Enter this 6-digit OTP code in FoodFriends to verify your email and reset your password:</p>
             <div style="font-size:32px;font-weight:900;letter-spacing:6px;text-align:center;padding:16px;background:#EAF7DE;color:#287A52;border-radius:12px;margin:20px 0;">${customOtpCode}</div>
             <p style="color:#7A897F;font-size:12px;">This code expires in 10 minutes.</p>
           </div>`,
@@ -1231,7 +1226,7 @@ export async function requestPasswordResetAction(input: {
     'foodfriends_pending_reset',
     JSON.stringify({
       email,
-      newPassword,
+      verified: false,
       customOtpCode: sentViaResend ? customOtpCode : null,
       expiresAt,
     }),
@@ -1256,7 +1251,7 @@ export async function requestPasswordResetAction(input: {
 export async function verifyPasswordResetAction(input: {
   email: string
   otpCode: string
-}): Promise<ActionResult<UserSession>> {
+}): Promise<ActionResult<{ email: string; verified: boolean }>> {
   const email = clean(input.email, 120).toLowerCase()
   const rawInput = clean(input.otpCode, 1000)
   const digitsOnly = rawInput.replace(/\D/g, '')
@@ -1293,7 +1288,7 @@ export async function verifyPasswordResetAction(input: {
     return {
       ok: false,
       error:
-        'Please enter the 6-digit OTP code or paste the Reset Password link from your email.',
+        'Please enter the 6-digit OTP code or paste the Sign-in verification link from your email.',
     }
   }
 
@@ -1302,13 +1297,13 @@ export async function verifyPasswordResetAction(input: {
   if (!rawPending) {
     return {
       ok: false,
-      error: 'Your password reset session expired. Please click "Resend Reset Email".',
+      error: 'Your verification session expired. Please click "Resend OTP Code".',
     }
   }
 
   let pending: {
     email: string
-    newPassword: string
+    verified?: boolean
     customOtpCode: string | null
     expiresAt: number
   }
@@ -1316,26 +1311,25 @@ export async function verifyPasswordResetAction(input: {
   try {
     pending = JSON.parse(rawPending)
   } catch {
-    return { ok: false, error: 'Invalid reset session. Please request a new reset email.' }
+    return { ok: false, error: 'Invalid verification session. Please request a new OTP.' }
   }
 
   if (Date.now() > pending.expiresAt) {
     cookieStore.delete('foodfriends_pending_reset')
     return {
       ok: false,
-      error: 'That reset code/link has expired (10-minute limit). Please request a new one.',
+      error: 'That verification code/link has expired (10-minute limit). Please request a new one.',
     }
   }
 
   if (pending.email !== email) {
     return {
       ok: false,
-      error: 'The email address changed. Please request a new reset email.',
+      error: 'The email address changed. Please request a new OTP for this email.',
     }
   }
 
   const supabase = await createClient()
-  const adminDb = createAdminClient()
 
   let verified = false
   let lastVerifyError = ''
@@ -1355,7 +1349,7 @@ export async function verifyPasswordResetAction(input: {
 
     const candidateTypes = extractedLinkType
       ? [extractedLinkType]
-      : ['recovery', 'magiclink', 'email', 'signup']
+      : ['magiclink', 'signup', 'recovery', 'email']
 
     for (const linkType of candidateTypes) {
       try {
@@ -1398,7 +1392,7 @@ export async function verifyPasswordResetAction(input: {
     }
 
     if (!verified) {
-      for (const otpType of ['recovery', 'magiclink', 'email'] as const) {
+      for (const otpType of ['magiclink', 'signup', 'recovery', 'email'] as const) {
         const { data, error } = await supabase.auth.verifyOtp({
           token_hash: extractedTokenHash,
           type: otpType,
@@ -1411,7 +1405,7 @@ export async function verifyPasswordResetAction(input: {
       }
     }
   } else {
-    for (const otpType of ['recovery', 'email', 'magiclink'] as const) {
+    for (const otpType of ['email', 'magiclink', 'recovery', 'signup'] as const) {
       const { data, error } = await supabase.auth.verifyOtp({
         email: pending.email,
         token: digitsOnly,
@@ -1430,13 +1424,82 @@ export async function verifyPasswordResetAction(input: {
       ok: false,
       error:
         lastVerifyError ||
-        'That reset link or code was already used or expired. Click "Resend Reset Email" for a fresh one!',
+        'That verification link or code was already used or expired. Click "Resend OTP Code" for a fresh email!',
     }
   }
 
+  // Mark the reset session as OTP-verified so the user can now set their new password!
+  cookieStore.set(
+    'foodfriends_pending_reset',
+    JSON.stringify({
+      email: pending.email,
+      verified: true,
+      customOtpCode: null,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    }),
+    {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 10,
+    }
+  )
+
+  return {
+    ok: true,
+    data: {
+      email: pending.email,
+      verified: true,
+    },
+  }
+}
+
+export async function completePasswordResetAction(input: {
+  email: string
+  newPassword: string
+}): Promise<ActionResult<UserSession>> {
+  const email = clean(input.email, 120).toLowerCase()
+  const newPassword = clean(input.newPassword, 128)
+
+  if (newPassword.length < 8) {
+    return { ok: false, error: 'Your new password must be at least 8 characters long.' }
+  }
+
+  const cookieStore = await cookies()
+  const rawPending = cookieStore.get('foodfriends_pending_reset')?.value
+  if (!rawPending) {
+    return {
+      ok: false,
+      error: 'Your verification session expired. Please verify your email OTP again.',
+    }
+  }
+
+  let pending: {
+    email: string
+    verified?: boolean
+    expiresAt: number
+  }
+
+  try {
+    pending = JSON.parse(rawPending)
+  } catch {
+    return { ok: false, error: 'Invalid reset session. Please verify your email OTP again.' }
+  }
+
+  if (!pending.verified || pending.email !== email || Date.now() > pending.expiresAt) {
+    return {
+      ok: false,
+      error: 'Please verify your email OTP code first before changing your password.',
+    }
+  }
+
+  const supabase = await createClient()
+  const adminDb = createAdminClient()
+
   // Update password in Supabase Auth (if session active) AND in Password Vault
-  await supabase.auth.updateUser({ password: pending.newPassword }).catch(() => {})
-  await saveUserPasswordToVault(pending.email, pending.newPassword)
+  await supabase.auth.updateUser({ password: newPassword }).catch(() => {})
+  await saveUserPasswordToVault(pending.email, newPassword)
 
   const {
     data: { user: activeAuthUser },

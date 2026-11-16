@@ -15,6 +15,7 @@ import {
   adminUpdateBrainBitesExtrasAction,
   analyzeFoodAction,
   askBananiniAction,
+  completePasswordResetAction,
   deleteUserFoodLogAction,
   exchangeEmailCodeAction,
   finalizeEmailHashSessionAction,
@@ -5327,10 +5328,11 @@ function AuthModal({
   const [passwordValue, setPasswordValue] = useState('')
   const [showPassword, setShowPassword] = useState(false)
 
-  // 2-Step OTP Verification State for Sign-Up & Forgot Password
+  // 2-Step OTP Verification State for Sign-Up & 3-Step Forgot Password (Email -> Verify OTP -> New Password)
   const [signupStep, setSignupStep] = useState<'details' | 'otp'>('details')
   const [forgotMode, setForgotMode] = useState(false)
-  const [forgotStep, setForgotStep] = useState<'details' | 'otp'>('details')
+  const [forgotStep, setForgotStep] = useState<'email' | 'otp' | 'new_password'>('email')
+  const [confirmPasswordValue, setConfirmPasswordValue] = useState('')
   const [otpCode, setOtpCode] = useState('')
   const [otpLoading, setOtpLoading] = useState(false)
   const [localError, setLocalError] = useState('')
@@ -5339,7 +5341,8 @@ function AuthModal({
   useEffect(() => {
     setLocalError('')
     setForgotMode(false)
-    setForgotStep('details')
+    setForgotStep('email')
+    setConfirmPasswordValue('')
     if (mode === 'login') {
       setSignupStep('details')
       setOtpCode('')
@@ -5354,11 +5357,9 @@ function AuthModal({
     return () => window.clearInterval(timer)
   }, [resendCooldown])
 
-  // Auto-detect if user clicked "Sign in" or "Reset Password" in their Gmail verification email in another tab
+  // Auto-detect if user clicked "Sign in" in their Gmail verification email in another tab
   useEffect(() => {
-    const isWaitingOnEmail =
-      (mode === 'signup' && signupStep === 'otp') || (forgotMode && forgotStep === 'otp')
-    if (!isWaitingOnEmail) return
+    if (mode !== 'signup' || signupStep !== 'otp') return
     const poll = window.setInterval(async () => {
       const res = await sessionAction()
       if (res.ok && res.data) {
@@ -5366,7 +5367,7 @@ function AuthModal({
       }
     }, 3000)
     return () => window.clearInterval(poll)
-  }, [mode, signupStep, forgotMode, forgotStep, onAuthSuccess])
+  }, [mode, signupStep, onAuthSuccess])
 
   const handleFillAdmin = () => {
     setEmailValue('admin@foodfriends.com')
@@ -5374,6 +5375,7 @@ function AuthModal({
     setLocalError('')
   }
 
+  // Step 1 of Forgot Password: Enter Email Only -> Send Verification OTP
   const handleRequestPasswordReset = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setLocalError('')
@@ -5381,7 +5383,6 @@ function AuthModal({
     try {
       const res = await requestPasswordResetAction({
         email: emailValue,
-        newPassword: passwordValue,
         redirectOrigin: typeof window !== 'undefined' ? window.location.origin : undefined,
       })
       if (res.ok) {
@@ -5403,7 +5404,6 @@ function AuthModal({
     try {
       const res = await requestPasswordResetAction({
         email: emailValue,
-        newPassword: passwordValue,
         redirectOrigin: typeof window !== 'undefined' ? window.location.origin : undefined,
       })
       if (res.ok) {
@@ -5417,6 +5417,7 @@ function AuthModal({
     }
   }
 
+  // Step 2 of Forgot Password: Verify OTP / Email Link FIRST -> Unlock Step 3 (New Password)
   const handleVerifyPasswordReset = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setLocalError('')
@@ -5425,6 +5426,37 @@ function AuthModal({
       const res = await verifyPasswordResetAction({
         email: emailValue,
         otpCode,
+      })
+      if (res.ok) {
+        setPasswordValue('')
+        setConfirmPasswordValue('')
+        setForgotStep('new_password')
+      } else {
+        setLocalError(res.error)
+      }
+    } finally {
+      setOtpLoading(false)
+    }
+  }
+
+  // Step 3 of Forgot Password: Set New Password (only after OTP is verified!)
+  const handleCompletePasswordReset = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setLocalError('')
+    if (passwordValue.length < 8) {
+      setLocalError('Your new password must be at least 8 characters long.')
+      return
+    }
+    if (passwordValue !== confirmPasswordValue) {
+      setLocalError('Passwords do not match. Please check and try again.')
+      return
+    }
+
+    setOtpLoading(true)
+    try {
+      const res = await completePasswordResetAction({
+        email: emailValue,
+        newPassword: passwordValue,
       })
       if (res.ok) {
         onAuthSuccess(res.data)
@@ -5531,22 +5563,76 @@ function AuthModal({
         </span>
 
         {forgotMode ? (
-          forgotStep === 'otp' ? (
+          forgotStep === 'email' ? (
+            <>
+              <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#FFF0B5] px-3 py-1 text-xs font-black text-[#5C440E]">
+                🔑 Password Recovery • Step 1 of 3
+              </div>
+              <h2 id="auth-title" className="mt-2 text-3xl font-black tracking-tight text-[#173C4A]">
+                Forgot password?
+              </h2>
+              <p className="mt-2 text-sm font-semibold text-[#6F7B73]">
+                Enter your registered email address first. We will send an OTP / verification link to verify your email before you can change your password.
+              </p>
+
+              <form onSubmit={handleRequestPasswordReset} className="mt-6 space-y-4">
+                <label className="block text-sm font-extrabold">
+                  Active email address
+                  <input
+                    required
+                    type="email"
+                    value={emailValue}
+                    onChange={(e) => setEmailValue(e.target.value)}
+                    className="mt-2 h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white px-4 outline-none focus:border-[#62A278]"
+                    placeholder="yourname@gmail.com"
+                  />
+                </label>
+
+                {activeError && (
+                  <p
+                    className="rounded-2xl bg-[#F8E2DD] p-3 text-sm font-bold text-[#8A3E36]"
+                    role="alert"
+                  >
+                    {activeError}
+                  </p>
+                )}
+
+                <Button type="submit" disabled={isBusy} className="w-full">
+                  {isBusy ? 'Sending OTP...' : 'Send Verification OTP'}
+                  <Icon name="arrow" />
+                </Button>
+
+                <p className="mt-6 text-center text-sm font-semibold text-[#707C74]">
+                  Remembered your password?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotMode(false)
+                      setForgotStep('email')
+                      setLocalError('')
+                    }}
+                    className="font-black text-[#287A52]"
+                  >
+                    Sign in
+                  </button>
+                </p>
+              </form>
+            </>
+          ) : forgotStep === 'otp' ? (
             <>
               <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#EAF7DE] px-3 py-1 text-xs font-black text-[#287A52]">
-                📧 OTP Sent to Your Email • Step 2 of 2
+                📧 OTP Sent to Your Email • Step 2 of 3
               </div>
               <h2 id="auth-title" className="mt-2 text-3xl font-black tracking-tight text-[#173C4A]">
                 Check Your Email
               </h2>
               <p className="mt-1.5 text-sm font-semibold text-[#6F7B73]">
                 We sent a verification email to{' '}
-                <span className="font-black text-[#173C4A]">{emailValue}</span>!
+                <span className="font-black text-[#173C4A]">{emailValue}</span>! Verify your OTP / link below to unlock changing your password.
               </p>
               <div className="mt-3 rounded-2xl border border-[#BCE3C8] bg-[#F2FAF4] p-3 text-xs font-bold text-[#1E6939]">
-                ✨ <span className="font-black">Easiest Way:</span> Simply open your email and click{' '}
-                <span className="underline">Sign in</span> — or right-click{' '}
-                <span className="font-black">&ldquo;Sign in&rdquo; → Copy link address</span> and paste it below!
+                ✨ <span className="font-black">How to Verify:</span> Right-click{' '}
+                <span className="font-black">&ldquo;Sign in&rdquo; → Copy link address</span> in your email and paste it below, or enter your 6-digit OTP code!
               </div>
 
               <form onSubmit={handleVerifyPasswordReset} className="mt-5 space-y-4">
@@ -5576,7 +5662,7 @@ function AuthModal({
                   disabled={isBusy || otpCode.length < 6}
                   className="w-full"
                 >
-                  {isBusy ? 'Verifying OTP...' : 'Verify OTP & Reset Password'}
+                  {isBusy ? 'Verifying OTP...' : 'Verify OTP to Change Password'}
                   <Icon name="arrow" />
                 </Button>
 
@@ -5584,7 +5670,7 @@ function AuthModal({
                   <button
                     type="button"
                     onClick={() => {
-                      setForgotStep('details')
+                      setForgotStep('email')
                       setLocalError('')
                     }}
                     className="text-[#5E6E64] hover:underline"
@@ -5606,26 +5692,17 @@ function AuthModal({
             </>
           ) : (
             <>
-              <h2 id="auth-title" className="mt-5 text-3xl font-black tracking-tight text-[#173C4A]">
-                Reset password
+              <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#D9F5D2] px-3 py-1 text-xs font-black text-[#1E6939]">
+                ✅ Email OTP Verified • Step 3 of 3
+              </div>
+              <h2 id="auth-title" className="mt-2 text-3xl font-black tracking-tight text-[#173C4A]">
+                Create New Password
               </h2>
-              <p className="mt-2 text-sm font-semibold text-[#6F7B73]">
-                Enter your active email address and new password — we will send a verification OTP / link to your email.
+              <p className="mt-1.5 text-sm font-semibold text-[#6F7B73]">
+                Your email <span className="font-black text-[#173C4A]">{emailValue}</span> is verified! Now enter your new password below.
               </p>
 
-              <form onSubmit={handleRequestPasswordReset} className="mt-6 space-y-4">
-                <label className="block text-sm font-extrabold">
-                  Active email address
-                  <input
-                    required
-                    type="email"
-                    value={emailValue}
-                    onChange={(e) => setEmailValue(e.target.value)}
-                    className="mt-2 h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white px-4 outline-none focus:border-[#62A278]"
-                    placeholder="yourname@gmail.com"
-                  />
-                </label>
-
+              <form onSubmit={handleCompletePasswordReset} className="mt-5 space-y-4">
                 <label className="block text-sm font-extrabold">
                   New password
                   <div className="relative mt-2">
@@ -5648,6 +5725,19 @@ function AuthModal({
                   </div>
                 </label>
 
+                <label className="block text-sm font-extrabold">
+                  Confirm new password
+                  <input
+                    required
+                    minLength={8}
+                    type={showPassword ? 'text' : 'password'}
+                    value={confirmPasswordValue}
+                    onChange={(e) => setConfirmPasswordValue(e.target.value)}
+                    className="mt-2 h-12 w-full rounded-2xl border border-[#D8E0D5] bg-white px-4 outline-none focus:border-[#62A278]"
+                    placeholder="Re-enter your new password"
+                  />
+                </label>
+
                 {activeError && (
                   <p
                     className="rounded-2xl bg-[#F8E2DD] p-3 text-sm font-bold text-[#8A3E36]"
@@ -5658,24 +5748,9 @@ function AuthModal({
                 )}
 
                 <Button type="submit" disabled={isBusy} className="w-full">
-                  {isBusy ? 'One moment...' : 'Send Verification OTP'}
+                  {isBusy ? 'Saving Password...' : 'Save New Password & Sign In'}
                   <Icon name="arrow" />
                 </Button>
-
-                <p className="mt-6 text-center text-sm font-semibold text-[#707C74]">
-                  Remembered your password?{' '}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setForgotMode(false)
-                      setForgotStep('details')
-                      setLocalError('')
-                    }}
-                    className="font-black text-[#287A52]"
-                  >
-                    Sign in
-                  </button>
-                </p>
               </form>
             </>
           )
@@ -5829,8 +5904,9 @@ function AuthModal({
                       type="button"
                       onClick={() => {
                         setForgotMode(true)
-                        setForgotStep('details')
+                        setForgotStep('email')
                         setPasswordValue('')
+                        setConfirmPasswordValue('')
                         setLocalError('')
                       }}
                       className="text-xs font-black text-[#287A52] hover:underline"
